@@ -1,12 +1,12 @@
-use std::future::Future;
 use clap::Parser;
+use std::future::Future;
 
 pub mod cube;
 pub mod framework;
 pub mod shader_toy;
 pub mod util;
 
-pub enum Action {
+pub enum Event {
     UpdateArgs(Args),
     Stop,
 }
@@ -51,7 +51,7 @@ impl<'a> Spawner<'a> {
     }
 }
 
-pub trait Renderable: 'static + Sized {
+pub trait RenderableConfig: 'static + Sized {
     fn optional_features() -> wgpu::Features {
         wgpu::Features::empty()
     }
@@ -68,13 +68,17 @@ pub trait Renderable: 'static + Sized {
     fn required_limits() -> wgpu::Limits {
         wgpu::Limits::downlevel_webgl2_defaults() // These downlevel limits will allow the code to run on all possible hardware
     }
+}
+
+pub trait Renderable: 'static {
     fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Self;
-
+    ) -> Self
+    where
+        Self: Sized;
     fn update(
         &mut self,
         accum_time: f32,

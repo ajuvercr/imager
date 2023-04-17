@@ -4,9 +4,11 @@ use std::time::Instant;
 use std::{
     io::{stdout, BufWriter, Write},
     num::NonZeroU32,
+    sync::mpsc,
     thread::sleep,
     time::Duration,
 };
+use wgpu::Texture;
 
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
@@ -16,7 +18,82 @@ use winit::{
 };
 use x11_dl::xlib::Xlib;
 
-use crate::{Args, Renderable, Spawner};
+use crate::{Args, Event, Renderable, RenderableConfig, Spawner};
+
+pub struct Rend {
+    id: u32,
+    texture: Texture,
+    renderable: Box<dyn Renderable>,
+}
+
+#[allow(unused)]
+pub struct Renders {
+    window: winit::window::Window,
+    event_loop: EventLoop<()>,
+    instance: wgpu::Instance,
+    surface: wgpu::Surface,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+
+    created: u32,
+    renderables: Vec<Rend>,
+    events: mpsc::Receiver<Event>,
+
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_format: wgpu::IndexFormat,
+}
+
+impl Renders {
+    pub fn create<E: RenderableConfig + Renderable>(&mut self, args: Args) -> u32 {
+        let id = self.created;
+        self.created += 1;
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("output-{}", id)),
+            size: wgpu::Extent3d {
+                width: args.width,
+                height: args.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        let renderable = Box::new(E::init(
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                width: args.width,
+                height: args.height,
+                present_mode: wgpu::PresentMode::Fifo,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
+            },
+            &self.adapter,
+            &self.device,
+            &self.queue,
+        ));
+
+        self.renderables.push(Rend { texture, renderable, id});
+
+        id
+    }
+
+    pub fn delete(&mut self, index: u32) {
+        if let Some(rend) = self.renderables.iter().position(|x| x.id == index) {
+            let _ = self.renderables.remove(rend);
+        } else {
+            eprintln!("Cannot delete id {} (Not found)", index);
+        }
+    }
+}
 
 pub struct Setup {
     window: winit::window::Window,
@@ -29,7 +106,7 @@ pub struct Setup {
     queue: wgpu::Queue,
 }
 
-pub async fn setup<E: Renderable>(args: &Args) -> Setup {
+pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
     let event_loop = EventLoop::new();
     let xlib = Xlib::open().unwrap();
     let builder = winit::window::WindowBuilder::new()
@@ -85,9 +162,6 @@ pub async fn setup<E: Renderable>(args: &Args) -> Setup {
         })
         .await
         .expect("No suitable GPU adapters found on the system!");
-    // let adapter =
-    //     wgpu::util::initialize_adapter_from_env_or_default(&instance, backends, Some(&surface))
-    //         .await
 
     let adapter_info = adapter.get_info();
     eprintln!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
@@ -124,7 +198,7 @@ pub async fn setup<E: Renderable>(args: &Args) -> Setup {
     }
 }
 
-pub fn start<E: Renderable>(
+pub fn start<E: Renderable + RenderableConfig>(
     Setup {
         window,
         event_loop,
@@ -250,133 +324,4 @@ pub fn start<E: Renderable>(
             _ => {}
         }
     });
-}
-
-#[allow(unused)]
-pub async fn screenshot<E: Renderable>(width: u32, height: u32, path: &str) {
-    let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
-    let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
-
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        dx12_shader_compiler,
-    });
-
-    let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, backends, None)
-        .await
-        .expect("No suitable GPU adapters found on the system!");
-
-    let adapter_info = adapter.get_info();
-    eprintln!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
-
-    let optional_features = E::optional_features();
-    let required_features = E::required_features();
-    let adapter_features = adapter.features();
-
-    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the surface.
-    let needed_limits = E::required_limits().using_resolution(adapter.limits());
-
-    let trace_dir = std::env::var("WGPU_TRACE");
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                features: (optional_features & adapter_features) | required_features,
-                limits: needed_limits,
-            },
-            trace_dir.ok().as_ref().map(std::path::Path::new),
-        )
-        .await
-        .expect("Unable to find a suitable GPU adapter!");
-
-    let spawner = Spawner::new();
-
-    let dst_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("destination"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-
-    let dst_view = dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let dst_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("image map buffer"),
-        size: width as u64 * height as u64 * 4,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-
-    let mut example = E::init(
-        &wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
-        },
-        &adapter,
-        &device,
-        &queue,
-    );
-
-    example.render(&dst_view, &device, &queue, &spawner);
-
-    let mut cmd_buf = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-    cmd_buf.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
-            texture: &dst_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::ImageCopyBuffer {
-            buffer: &dst_buffer,
-            layout: wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(NonZeroU32::new(width * 4).unwrap()),
-                rows_per_image: None,
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-
-    queue.submit(Some(cmd_buf.finish()));
-
-    let dst_buffer_slice = dst_buffer.slice(..);
-    dst_buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
-    device.poll(wgpu::Maintain::Wait);
-    let bytes = dst_buffer_slice.get_mapped_range().to_vec();
-
-    let file: Box<dyn Write> = if path == "-" {
-        Box::new(BufWriter::new(stdout().lock()))
-    } else {
-        Box::new(std::io::BufWriter::new(
-            std::fs::File::create(path).unwrap(),
-        ))
-    };
-
-    let mut encoder = png::Encoder::new(file, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::Best);
-
-    let mut writer = encoder.write_header().unwrap();
-
-    writer.write_image_data(&bytes).unwrap();
 }

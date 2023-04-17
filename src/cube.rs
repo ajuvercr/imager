@@ -3,7 +3,7 @@ use std::{borrow::Cow, f32::consts, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 use crate::util::ErrorFuture;
-use crate::{Renderable, Spawner};
+use crate::{Renderable, Spawner, RenderableConfig};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -105,11 +105,13 @@ impl Example {
     }
 }
 
-impl Renderable for Example {
+impl RenderableConfig for Example {
     fn optional_features() -> wgpu::Features {
         wgpu::Features::POLYGON_MODE_LINE
     }
+}
 
+impl Renderable for Example {
     fn init(
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,

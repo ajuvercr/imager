@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::{util::ErrorFuture, Renderable, Spawner};
+use crate::{util::ErrorFuture, Renderable, RenderableConfig, Spawner};
 
 static FRAG_HEADER: &'static str = r#"
 // uniform samplerXX iChannel0..3;          // input channel. XX = 2D/Cube
@@ -112,6 +112,10 @@ pub struct Example {
     uniform: Uniform,
     uniform_buf: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
+}
+
+impl RenderableConfig for Example {
+
 }
 
 impl Renderable for Example {
