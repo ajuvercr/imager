@@ -3,6 +3,8 @@ use std::future::Future;
 
 pub mod cube;
 pub mod framework;
+pub mod francis;
+pub mod screenshot;
 pub mod shader_toy;
 pub mod util;
 
@@ -35,7 +37,7 @@ pub struct Spawner<'a> {
 }
 
 impl<'a> Spawner<'a> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             executor: async_executor::LocalExecutor::new(),
         }
@@ -46,7 +48,12 @@ impl<'a> Spawner<'a> {
         self.executor.spawn(future).detach();
     }
 
-    fn run_until_stalled(&self) {
+    pub fn run(&self) {
+        while self.executor.try_tick() {
+        }
+    }
+
+    pub fn run_until_stalled(&self) {
         while self.executor.try_tick() {}
     }
 }

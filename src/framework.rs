@@ -1,9 +1,6 @@
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use std::{
-    io::{stdout, BufWriter, Write},
-    num::NonZeroU32,
     sync::mpsc,
     thread::sleep,
     time::Duration,
