@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{future::Future, error::Error};
+use std::{error::Error, future::Future};
 
 pub mod cube;
 pub mod framework;
@@ -75,7 +75,10 @@ pub trait RenderableConfig: 'static + Sized {
         }
     }
     fn required_limits() -> wgpu::Limits {
-        wgpu::Limits::downlevel_webgl2_defaults() // These downlevel limits will allow the code to run on all possible hardware
+        wgpu::Limits {
+            max_bind_groups: 6,
+            ..wgpu::Limits::default() // These downlevel limits will allow the code to run on all possible hardware
+        }
     }
 
     async fn init(

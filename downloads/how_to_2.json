@@ -1,0 +1,62 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "tdXfDM",
+    "date": "1588632856",
+    "viewed": 565,
+    "name": "Basic cubemap example",
+    "username": "4rknova",
+    "description": "A basic example of how to render to each face in the 'Cube A' pass",
+    "likes": 3,
+    "published": 3,
+    "flags": 0,
+    "tags": [
+      "basic"
+    ],
+    "hasliked": 0,
+    "usePreview": 0
+  },
+  "renderpass": [
+    {
+      "inputs": [
+        {
+          "id": 41,
+          "src": "/media/a//media/previz/cubemap00.png",
+          "ctype": "cubemap",
+          "channel": 0,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 37,
+          "channel": 0
+        }
+      ],
+      "code": "// by Nikos Papadopoulos, 4rknova / 2020\n// Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.\n\n#define PI\t(3.14159265359)\n#define PIH (1.57079632679)\n\nvec3 dir(vec2 p)\n{\n    vec2 s = (p/iResolution.xy*2.-1.) * vec2(PI,PIH); // Spherical coords\n    vec4 t = vec4(sin(s), cos(s));                    // Precalculated sin/cos values\n    return t.zyx * vec3(t.w, 1, t.w);                 // Conversion to direction\n}\n\nvoid mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n\tfragColor = texture(iChannel0, dir(fragCoord));\n}",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    },
+    {
+      "inputs": [],
+      "outputs": [
+        {
+          "id": 41,
+          "channel": 0
+        }
+      ],
+      "code": "// by Nikos Papadopoulos, 4rknova / 2020\n// Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.\n\n#define FACE_X_POS (0)\n#define FACE_X_NEG (1)\n#define FACE_Y_POS (2)\n#define FACE_Y_NEG (3)\n#define FACE_Z_POS (4)\n#define FACE_Z_NEG (5)\n\nint dir2face(in vec3 dir)\n{\n    vec3 d = abs(dir);\n    if (d.z >= d.x && d.z >= d.y) return dir.z < 0.0 ? FACE_Z_NEG : FACE_Z_POS;\n    if (d.y >= d.x              ) return dir.y < 0.0 ? FACE_Y_NEG : FACE_Y_POS;\n    \t\t\t\t\t\t\t  return dir.x < 0.0 ? FACE_X_NEG : FACE_X_POS;  \n}\n\nvoid mainCubemap( out vec4 fragColor, in vec2 fragCoord, in vec3 rayOri, in vec3 rayDir )\n{\n    int idx = dir2face(rayDir);    \n    \n    vec3 col = vec3(0);\n    \n    switch (idx) {\n        case FACE_X_POS: col = vec3(1.0,0.0,0.0); break;\n        case FACE_X_NEG: col = vec3(0.5,0.0,0.0); break;\n        case FACE_Y_POS: col = vec3(0.0,1.0,0.0); break;\n        case FACE_Y_NEG: col = vec3(0.0,0.5,0.0); break;\n        case FACE_Z_POS: col = vec3(0.0,0.0,1.0); break;\n        case FACE_Z_NEG: col = vec3(0.0,0.0,0.5); break;\n    }\n    \n    fragColor = vec4(col, 1);\n}",
+      "name": "Cube A",
+      "description": "",
+      "type": "cubemap"
+    }
+  ]
+}

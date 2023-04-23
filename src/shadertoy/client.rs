@@ -212,7 +212,7 @@ impl Client {
         Ok(data.to_vec())
     }
 
-    pub async fn get_png(&self, resource: &str) -> Result<(image::RgbaImage, (u32, u32))> {
+    pub async fn get_png(&self, resource: &str, is_cube: bool) -> Result<(Vec<u8>, (u32, u32))> {
         use image::io::Reader as ImageReader;
 
         let bytes = self.get_resource(resource).await?;
@@ -220,11 +220,30 @@ impl Client {
             .with_guessed_format()?
             .decode()?;
 
-        img2.save("./img.png")?;
-
         let size = (img2.width(), img2.height());
+        let mut raw = img2.into_rgba8().into_raw();
 
-        Ok((img2.into_rgba8(), size))
+        if is_cube {
+            let dot_idx = resource.rfind('.').unwrap();
+            let (start, end) = resource.split_at(dot_idx);
+            for i in 1..6 {
+                println!("Getting more cube things {}", i);
+
+                let url = format!("{}_{}{}", start, i, end);
+
+                let bytes = self.get_resource(resource).await?;
+                let img2 = ImageReader::new(Cursor::new(bytes))
+                    .with_guessed_format()?
+                    .decode()?;
+
+                let size = (img2.width(), img2.height());
+                raw.extend_from_slice(&img2.into_rgba8().as_raw());
+            }
+
+            Ok((raw, size))
+        } else {
+            Ok((raw, size))
+        }
 
         // let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info()?;
         //

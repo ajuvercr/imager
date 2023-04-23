@@ -1,0 +1,50 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "dtt3Wr",
+    "date": "1682275968",
+    "viewed": 0,
+    "name": "Fork How to use silvius 964",
+    "username": "silvius",
+    "description": "Using cubemaps is hard. I've taken apart a shader that uses a cubemap and added comments explaining how it works.",
+    "likes": 0,
+    "published": 3,
+    "flags": 0,
+    "tags": [
+      "3d",
+      "cubemap"
+    ],
+    "hasliked": 0,
+    "usePreview": 0
+  },
+  "renderpass": [
+    {
+      "inputs": [
+        {
+          "id": 24,
+          "src": "/media/a/488bd40303a2e2b9a71987e48c66ef41f5e937174bf316d3ed0e86410784b919.jpg",
+          "ctype": "cubemap",
+          "channel": 0,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "repeat",
+            "vflip": "false",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 37,
+          "channel": 0
+        }
+      ],
+      "code": "/**\n * Trivial Cubemap shader by Anthony 'Bitzawolf' Pepe\n * @bitzawolf\n * bitzawolf.com\n */\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    // rotX\n    // 1) Get mouse position between 0 and 1\n    // 2) Multiply by 2pi\n    // rotX varies betwee 0 and 2pi\n    // rotY varies between 0 and pi\n    // 0 at left side, 2pi at right\n    float rotX = (iMouse.x / iResolution.x) * 2.0 * 3.14;\n    float rotY = (iMouse.y / iResolution.y) * 3.14;\n    \n    // pixel position - 1/2 resolution\n    //\t\tx: [-400, 400] y: [-300, 300] (assuming 800x600 resolution)\n    // \n    // Multiply by 2.5\n    // This scales the cubemap texture. Think as pixels move along the screen,\n    //    pixels in the texture are accessed further apart. A pixel x-position\n    //    of 0 will correspond to 0 in the texture, then a pixel x-position of\n    //    10 will correspond to 25 in the texture. This scales the texture down.\n    // \t\tx: [-1000, 1000] y: [-750, 750]\n    //\n    // We divide by resolution.xx because the render screen is not square and will\n    //\t\twarp the texture if we divide by resolution.xy\n    // \t\tx: [-1.25, 1.25] y: [-0.9375, 0.9375]\n    vec2 uv = 2.5 * (fragCoord.xy - 0.5 * iResolution.xy) / iResolution.xx;\n    \n    // Camera Orientation\n    //\t\t\t\t\t\tAs the mouse moves from bottom-left to top-right\n    //\t\tx = cos(rotX) = {1, 0, -1,  0,  1}\n    //\t\ty = cos(rotY) = {1,     0,     -1}\n    //\t\tz = sin(rotX) = {0, 1,  0, -1,  0}\n    // example with mouse at camera center:\n    //\t\trotX = cos(3.14) = -1\n    //\t\trotY = cos(1.57) = 0\n    //\t\t(-1, 0, 0)\n    vec3 camO = vec3(cos(rotX), cos(rotY), sin(rotX));\n    \n    // Cam D\n    // Negative of Cam O\n    // example at center:\n    //\t\t(1, 0, 0)\n    vec3 camD = normalize(vec3(0)-camO);\n    \n    // Cam R\n    // cross of CamD and (0, 1, 0)\n    // example at center\n    //\t\t(1, 0, 0) x (0, 1, 0) = (0, 0, 1)\n    vec3 camR = normalize(cross(camD, vec3(0, 1, 0)));\n    \n    // Cam Up\n    // cross of CamR and CamD\n    // example:\n   \t//\t\t(0, 0, 1) x (1, 0, 0) = (0, 1, 0)\n    vec3 camU = cross(camR,camD);\n    \n    // Camera direction\n    //\t\tuv.x * camR\n    //\t\tuv.y * camU\n    //\t\tcamD\n    // example:\n    //\t\tuv.x * (0, 0, 1) = (0, 0, uv.x)\n    //\t\tuv.y * (0, 1, 0) = (0, uv.y, 0)\n    //\t\t(1, 0, 0)\n    //\t\tresult: (1, uv.y, uv.x)\n    // It's very important to normalize the vector here, otherwise\n    // the cubemap will be skewed.\n   \tvec3 dir =  normalize(uv.x * camR + uv.y * camU + camD);\n    fragColor = texture(iChannel0, dir);\n    \n    // proof of example at mouse = camera center\n\t//fragColor = texture(iChannel0, vec3(1., uv.y, uv.x));\n}",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    }
+  ]
+}

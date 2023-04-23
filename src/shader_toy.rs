@@ -176,12 +176,14 @@ struct Layouts<'a> {
     vb_layout: &'a [wgpu::VertexBufferLayout<'a>],
 }
 
-fn sampler_string(binding: usize, channel: u64) -> String {
+fn sampler_string(binding: usize, channel: u64, cubemap: bool) -> String {
+    let ty = if cubemap { "textureCube" } else { "texture2D" };
+    let sampler = if cubemap { "samplerCube" } else { "sampler2D" };
     format!(
         r#"
-layout(set = {binding}, binding = 0) uniform texture2D u_texture_{channel};
+layout(set = {binding}, binding = 0) uniform {ty} u_texture_{channel};
 layout(set = {binding}, binding = 1) uniform sampler u_sampler_{channel};
-#define iChannel{channel} sampler2D(u_texture_{channel}, u_sampler_{channel})
+#define iChannel{channel} {sampler}(u_texture_{channel}, u_sampler_{channel})
     "#
     )
 }
@@ -205,8 +207,8 @@ impl<'a> PipelineBuilder<'a> {
         }
     }
 
-    fn add_sampler(&mut self, channel: u64) {
-        self.inner_text += &sampler_string(self.samplers_made, channel);
+    fn add_sampler(&mut self, channel: u64, cubemap: bool) {
+        self.inner_text += &sampler_string(self.samplers_made, channel, cubemap);
         self.samplers_made += 1;
     }
 
@@ -296,7 +298,7 @@ impl<'a> PipelineBuilder<'a> {
             let is_cubemap = input.ctype == "cubemap";
 
             // lets get this image
-            let (image, (width, height)) = self.client.get_png(&input.src).await?;
+            let (image, (width, height)) = self.client.get_png(&input.src, is_cubemap).await?;
             println!(
                 "Image info {:?} ({} {})",
                 width * height,
@@ -318,49 +320,33 @@ impl<'a> PipelineBuilder<'a> {
                 depth_or_array_layers: if is_cubemap { 6 } else { 1 },
             };
 
-            let layer_size = wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            };
-            let max_mips = if is_cubemap {
-                6
-                // layer_size.max_mips(wgpu::TextureDimension::D2)
-            } else {
-                1
-            };
-            println!("max mips {}", max_mips);
 
-            let texture = self.device.create_texture_with_data(
-                &self.queue,
-                &wgpu::TextureDescriptor {
-                    label: Some(&input.src),
-                    size: texture_size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(&input.src),
+                size: texture_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            self.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
                 },
                 &image,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: std::num::NonZeroU32::new(4 * width),
+                    rows_per_image: std::num::NonZeroU32::new(height),
+                },
+                texture_size, // Fuck you
             );
-            //
-            // self.queue.write_texture(
-            //     wgpu::ImageCopyTexture {
-            //         texture: &texture,
-            //         mip_level: 0,
-            //         origin: wgpu::Origin3d::ZERO,
-            //         aspect: wgpu::TextureAspect::All,
-            //     },
-            //     &image,
-            //     wgpu::ImageDataLayout {
-            //         offset: 0,
-            //         bytes_per_row: std::num::NonZeroU32::new(4 * info.0),
-            //         rows_per_image: std::num::NonZeroU32::new(info.1),
-            //     },
-            //     texture_size, // Fuck you
-            // );
 
             let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
                 address_mode_u: wgpu::AddressMode::Repeat,
@@ -377,7 +363,9 @@ impl<'a> PipelineBuilder<'a> {
             } else {
                 None
             };
+
             let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                label: None,
                 dimension,
                 ..wgpu::TextureViewDescriptor::default()
             });
@@ -431,7 +419,81 @@ impl<'a> PipelineBuilder<'a> {
             self.bind_groups.push(bind_group);
             self.bind_group_layouts.push(sampler_layout);
 
-            self.add_sampler(input.channel);
+            self.add_sampler(input.channel, is_cubemap);
+        }
+
+        if input.ctype == "keyboard" {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("destination"),
+                size: wgpu::Extent3d::default(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            self.queue.write_texture(
+                texture.as_image_copy(),
+                &[255, 0, 0, 255],
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: std::num::NonZeroU32::new(4 * 1),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d::default(),
+            );
+
+            let sampler = self
+                .device
+                .create_sampler(&wgpu::SamplerDescriptor::default());
+            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let sampler_layout =
+                self.device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: None,
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    sample_type: wgpu::TextureSampleType::Float {
+                                        filterable: true,
+                                    },
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                    multisampled: false,
+                                },
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
+                            },
+                        ],
+                    });
+
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+                layout: &sampler_layout,
+                label: Some("bind group"),
+            });
+
+            self.bind_groups.push(bind_group);
+            self.bind_group_layouts.push(sampler_layout);
+
+            self.add_sampler(input.channel, false);
         }
 
         if input.ctype == "buffer" {
@@ -509,7 +571,7 @@ impl<'a> PipelineBuilder<'a> {
 
             self.bind_groups.push(bind_group);
             self.bind_group_layouts.push(sampler_layout);
-            self.add_sampler(input.channel);
+            self.add_sampler(input.channel, false);
         }
 
         Ok(())
@@ -535,6 +597,7 @@ pub struct Example {
 #[async_trait::async_trait]
 impl RenderableConfig for Example {
     type Input = Args;
+
     async fn init(
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,
