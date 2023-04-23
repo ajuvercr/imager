@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{error::Error, num::NonZeroU32};
 
 use wgpu::{Buffer, Texture, TextureView};
 
@@ -73,12 +73,13 @@ pub struct Frame {
     pub buffer: Vec<u8>,
 }
 
-pub fn scrot_new<E: Renderable>(
+pub async fn scrot_new<'a, E: Renderable + RenderableConfig>(
     ctx: Ctx,
-    spawner: Spawner,
+    spawner: Spawner<'a>,
     width: u32,
     height: u32,
-) -> AnimScrot<E> {
+    input: E::Input,
+) -> Result<AnimScrot<E>, Box<dyn Error>> {
     let dst_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("destination"),
         size: wgpu::Extent3d {
@@ -116,9 +117,11 @@ pub fn scrot_new<E: Renderable>(
         &ctx.adapter,
         &ctx.device,
         &ctx.queue,
-    );
+        input,
+    )
+    .await?;
 
-    AnimScrot {
+    Ok(AnimScrot {
         ctx,
         width,
         height,
@@ -127,14 +130,13 @@ pub fn scrot_new<E: Renderable>(
         dst_view,
         dst_buffer,
         dst_texture,
-    }
+    })
 }
 
 impl<'a, E: Renderable> AnimScrot<'a, E> {
     pub async fn frame(&mut self, time: f32) -> Frame {
         self.example
             .update(time, &self.ctx.device, &self.ctx.queue, &self.spawner);
-
 
         self.example.render(
             &self.dst_view,

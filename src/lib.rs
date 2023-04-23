@@ -1,11 +1,12 @@
 use clap::Parser;
-use std::future::Future;
+use std::{future::Future, error::Error};
 
 pub mod cube;
 pub mod framework;
 pub mod francis;
 pub mod screenshot;
 pub mod shader_toy;
+pub mod shadertoy;
 pub mod util;
 
 pub enum Event {
@@ -49,8 +50,7 @@ impl<'a> Spawner<'a> {
     }
 
     pub fn run(&self) {
-        while self.executor.try_tick() {
-        }
+        while self.executor.try_tick() {}
     }
 
     pub fn run_until_stalled(&self) {
@@ -58,7 +58,9 @@ impl<'a> Spawner<'a> {
     }
 }
 
+#[async_trait::async_trait]
 pub trait RenderableConfig: 'static + Sized {
+    type Input;
     fn optional_features() -> wgpu::Features {
         wgpu::Features::empty()
     }
@@ -75,17 +77,19 @@ pub trait RenderableConfig: 'static + Sized {
     fn required_limits() -> wgpu::Limits {
         wgpu::Limits::downlevel_webgl2_defaults() // These downlevel limits will allow the code to run on all possible hardware
     }
-}
 
-pub trait Renderable: 'static {
-    fn init(
+    async fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Self
+        input: Self::Input,
+    ) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized;
+}
+
+pub trait Renderable: 'static {
     fn update(
         &mut self,
         accum_time: f32,

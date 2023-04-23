@@ -1,10 +1,6 @@
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::time::Instant;
-use std::{
-    sync::mpsc,
-    thread::sleep,
-    time::Duration,
-};
+use std::{sync::mpsc, thread::sleep, time::Duration};
 use wgpu::Texture;
 
 use winit::{
@@ -44,7 +40,11 @@ pub struct Renders {
 }
 
 impl Renders {
-    pub fn create<E: RenderableConfig + Renderable>(&mut self, args: Args) -> u32 {
+    pub async fn create<I, E: RenderableConfig<Input = I> + Renderable>(
+        &mut self,
+        args: Args,
+        input: I,
+    ) -> u32 {
         let id = self.created;
         self.created += 1;
 
@@ -63,22 +63,31 @@ impl Renders {
             view_formats: &[],
         });
 
-        let renderable = Box::new(E::init(
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                width: args.width,
-                height: args.height,
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
-            },
-            &self.adapter,
-            &self.device,
-            &self.queue,
-        ));
+        let renderable = Box::new(
+            E::init(
+                &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    width: args.width,
+                    height: args.height,
+                    present_mode: wgpu::PresentMode::Fifo,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
+                },
+                &self.adapter,
+                &self.device,
+                &self.queue,
+                input,
+            )
+            .await
+            .unwrap(),
+        );
 
-        self.renderables.push(Rend { texture, renderable, id});
+        self.renderables.push(Rend {
+            texture,
+            renderable,
+            id,
+        });
 
         id
     }
@@ -195,7 +204,7 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
     }
 }
 
-pub fn start<E: Renderable + RenderableConfig>(
+pub async fn start<I, E: Renderable + RenderableConfig<Input = I>>(
     Setup {
         window,
         event_loop,
@@ -207,6 +216,7 @@ pub fn start<E: Renderable + RenderableConfig>(
         queue,
     }: Setup,
     args: Args,
+    input: I,
 ) {
     let spawner = Spawner::new();
     let mut config = surface
@@ -215,7 +225,9 @@ pub fn start<E: Renderable + RenderableConfig>(
     surface.configure(&device, &config);
 
     log::info!("Initializing the example...");
-    let mut example = E::init(&config, &adapter, &device, &queue);
+    let mut example = E::init(&config, &adapter, &device, &queue, input)
+        .await
+        .unwrap();
 
     let start = Instant::now();
     let mut last_frame_inst = Instant::now();

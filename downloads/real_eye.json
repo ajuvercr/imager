@@ -1,0 +1,126 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "MsKBDG",
+    "date": "1533873467",
+    "viewed": 7784,
+    "name": "[SH18] The Eye",
+    "username": "knarkowicz",
+    "description": "Rest of the human is left as an exercise for the reader ;)",
+    "likes": 172,
+    "published": 3,
+    "flags": 32,
+    "tags": [
+      "eye",
+      "animation",
+      "iris",
+      "face",
+      "skin",
+      "stone",
+      "human",
+      "sh18"
+    ],
+    "hasliked": 0,
+    "usePreview": 0
+  },
+  "renderpass": [
+    {
+      "inputs": [
+        {
+          "id": 257,
+          "src": "/media/previz/buffer00.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 37,
+          "channel": 0
+        }
+      ],
+      "code": "void mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n \tvec2 UV = fragCoord.xy / iResolution.xy;\n    \n    // Chromatic Abberation\n    vec2 CAOffset = (UV - 0.5) * 0.005;\n\n    vec3 Color;\n    Color.x = texture(iChannel0, UV - CAOffset).x;\n    Color.y = texture(iChannel0, UV).y;\n    Color.z = texture(iChannel0, UV + CAOffset).z; \n    \n    // Vignette\n    float Vignette = UV.x * UV.y * (1.0 - UV.x) * (1.0 - UV.y);\n    Vignette = clamp(pow(16.0 * Vignette, 0.3), 0.0, 1.0);\n    Color *= 0.5 * Vignette + 0.5;\n    \n    Color = pow(Color, vec3(1.0 / 2.2));\n    \n    fragColor = vec4(Color, 1.0);\n}",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    },
+    {
+      "inputs": [
+        {
+          "id": 2,
+          "src": "/media/a/cd4c518bc6ef165c39d4405b347b51ba40f8d7a065ab0e8d2e4f422cbc1e8a43.jpg",
+          "ctype": "texture",
+          "channel": 2,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "repeat",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 4,
+          "src": "/media/a/e6e5631ce1237ae4c05b3563eda686400a401df4548d0f9fad40ecac1659c46c.jpg",
+          "ctype": "texture",
+          "channel": 0,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "repeat",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 26,
+          "src": "/media/a/94284d43be78f00eb6b298e6d78656a1b34e2b91b34940d02f1ca8b22310e8a0.png",
+          "ctype": "cubemap",
+          "channel": 3,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "clamp",
+            "vflip": "false",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 47,
+          "src": "/media/a/ad56fba948dfba9ae698198c109e71f118a54d209c0ea50d77ea546abad89c57.png",
+          "ctype": "texture",
+          "channel": 1,
+          "sampler": {
+            "filter": "mipmap",
+            "wrap": "repeat",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 257,
+          "channel": 0
+        }
+      ],
+      "code": "const float PI = float(3.14159265359);\nconst vec3 BLOOD_COLOR = vec3(0.3, 0.03, 0.04);\n\n// Globals\nvec2 GEyeRot = vec2(0.0);\nvec2 GEyelidRot = vec2(1.0);\nfloat GEyeBrowDown = 0.0;\n\nfloat saturate(float X)\n{\n    return clamp(X, 0.0, 1.0);\n}\n\nvec3 saturate(vec3 X)\n{\n    return clamp(X, 0.0, 1.0);\n}\n\nfloat Sphere(vec3 Pos, float Radius)\n{\n\treturn length(Pos) - Radius;\n}\n\nfloat Max(vec3 V)\n{\n    return max(max(V.x, V.y), V.z);\n}\n\nfloat Box(vec3 Pos, vec3 Ext) \n{\n\tvec3 Dist = abs(Pos) - Ext;\n\treturn length(max(Dist, vec3(0.0))) + Max(min(Dist, vec3(0.0)));\n}\n\nfloat Rectangle(vec2 p, vec2 b)\n{\n    vec2 d = abs(p) - b;\n    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));\n}\n\nfloat UnionSoft(float a, float b, float r) \n{\n\tfloat e = max(r - abs(a - b), 0.0);\n\treturn min(a, b) - e * e * 0.25 / r;\n}\n\nfloat SubstractRound(float a, float b, float r) \n{\n\tvec2 u = max(vec2(r + a,r - b), vec2(0));\n\treturn min(-r, max (a, -b)) + length(u);\n}\n\nvoid Rotate(inout vec2 p, float a) \n{\n    p = cos(a) * p + sin(a) * vec2(p.y, -p.x);\n}\n\nfloat EyelidCutSDF(vec3 Pos)\n{    \n    float EyelidHi = mix(length(Pos.xy - vec2(-0.1, -1.2)) - 1.3, +Pos.y + 0.20, GEyelidRot.x);\n    float EyelidLo = mix(length(Pos.xy - vec2(+0.0, +1.0)) - 1.3, -Pos.y - 0.15, GEyelidRot.y);\n    float EyelidCut = SubstractRound(EyelidHi, -EyelidLo, 0.02);\n    \n    EyelidCut = SubstractRound(EyelidCut, \n                               -(UnionSoft(\n                                   length(Pos.xy - vec2(-0.1, +1.0)) - 1.3, \n                                   -Pos.y - 0.14, 0.01)),\n                               0.02);\n    \n    return EyelidCut;\n}\n\nfloat EyeCornerSDF(vec3 Pos)\n{\n    Pos -= vec3(0.53, -0.15, -0.79);\n    Rotate(Pos.xy, -0.3);\n    float Dist = length(Pos.xz) - 0.07;\n    Dist = UnionSoft(Dist, Sphere(Pos - vec3(0.05, 0.03, 0.03), 0.1), 0.02);\n    return Dist;\n}\n\nfloat EyeballSDF(vec3 Pos)\n{\n    vec3 EyePos = Pos;\n\tRotate(EyePos.xz, GEyeRot.x);\n    Rotate(EyePos.yz, GEyeRot.y);\n    \n    float Eye = Sphere(EyePos, 1.0);\n\tfloat EyeCorner = EyeCornerSDF(Pos);\n\t    \n    float EyeBulge = SubstractRound(Sphere(EyePos - vec3(0.0, 0.0, -0.53), 0.5), EyeCorner, 0.1);\n    \n    float Dist = UnionSoft(UnionSoft(Eye, EyeBulge, 0.01), EyeCorner, 0.02);\n    return Dist;\n}\n\nfloat IrisScene(vec3 Pos)\n{\n\tRotate(Pos.xz, GEyeRot.x);\n    Rotate(Pos.yz, GEyeRot.y);    \n    \n    float Eye = Sphere(Pos, 1.0);\n    \n    float EyeBulge = Sphere(Pos - vec3(0.0, 0.0, -1.0), 0.2);\n\n    float Dist = SubstractRound(Eye, EyeBulge, 0.1);\n    \n\treturn Dist;\n}\n\nfloat Scene(vec3 p)\n{\n    vec3 t = p;\n    Rotate(t.yz, 0.5);\n    Rotate(t.xy, 0.55);     \n    float Face = length(t.xz - vec2(-0.5, 1.15)) - 1.8;\n    \n    t = p;\n    Face = UnionSoft(Face, length(t.xz - vec2(0.2, 0.02)) - 1.0, 0.1);\n    \n    \n    // Top\n    t = p;\n    float Top = length(t.yz - vec2(0.8,-0.3)) - 0.9;\n    \n    Top = UnionSoft(Top, length(t.yz - vec2(mix(0.8, 0.65, GEyeBrowDown),-0.3)) - 0.9, 0.1);\n    \n    t = p - vec3(1.5, 0.65, -0.7);\n    Rotate(t.xy, -0.25);\n    Rotate(t.xz, -0.1);\n    Top = UnionSoft(Top, Box(t, vec3(1.5, 0.5, 0.45)), 0.2);\n        \n    t = p;\n    Rotate(t.xy, -0.15 * PI);\n    Rotate(t.xz, 0.20 * PI);  \n    Top = SubstractRound(Top, t.x + 1.6, 1.0);\n    \n    Top = UnionSoft(Top, length(p.xz - vec2(-0.3, 1.5)) - 2.3, 0.1);\n            \n\tFace = UnionSoft(Face, Top, 0.2);        \n    \n    // Nose    \n    t = p;\n    Rotate(t.yz, 0.2 * PI);\n    Face = UnionSoft(Face, length(t.xz - vec2(1.5,-0.5)) - 0.6, 0.1);\n    \n    t = p;\n    Rotate(t.xy, 0.25 * PI);\n    Face = UnionSoft(Face, length(t.xz - vec2(1.25,-0.9)) - 0.6, 0.2);\n    \n    t = p;\n    Rotate(t.xy, -0.15 * PI);\n    Face = UnionSoft(Face, length(t.xz - vec2(1.4,-0.9)) - 0.5, 0.1);    \n    \n    // Right line\n    t = p;\n    Rotate(t.xz, 0.30 * PI);\n    Face = SubstractRound(Face, length(t.xy - vec2(-1.7,-0.1)) - 0.5, 0.4);\n    \n    // Cheek\n    Face = UnionSoft(Face, Sphere(p - vec3(0.2 * GEyeRot.x, -1.2 + 0.05 * GEyelidRot.y + 0.2 * GEyeRot.y, -0.35), 1.0), 0.1);\n            \n  \tfloat EyelidCut = EyelidCutSDF(p);\t\n    \n    float Eyelid = Sphere(p, 1.05);\n    \n    t = p;\n    Rotate(t.xy, 0.1);\n    Rotate(t.xz, -0.6);\n    Eyelid = UnionSoft(Eyelid, max(-t.z - 0.25, -p.x + 0.3), 0.2);\n\n\n    // Animated eye bulge\n    vec3 t2 = p;\n    Rotate(t2.xz, GEyeRot.x);\n    Rotate(t2.yz, GEyeRot.y);\n    \n    float EyeBulge = Sphere(t2 - vec3(0.0, 0.0, -0.7), 0.45);\n    Eyelid = UnionSoft(Eyelid, EyeBulge, 0.1);\n    \n    \n\tFace = SubstractRound(Face, Sphere(p, 0.9), 0.3);\n    \n    Face = UnionSoft(Eyelid, Face, 0.05);\n    \n    Face = SubstractRound(Face, EyelidCut, 0.05);\n\n\treturn min(Face, EyeballSDF(p));\n}\n\nfloat CastRay(in vec3 ro, in vec3 rd)\n{\n    const float maxd = 5.0;\n    \n\tfloat h = 1.0;\n    float t = 0.0;\n   \n    for (int i = 0; i < 50; ++i)\n    {\n        if (h < 0.001 || t > maxd)\n        {\n            break;\n        }\n        \n\t    h = Scene(ro + rd * t);\n        t += h;\n    }\n\n    if (t > maxd)\n    {\n        t = -1.0;\n    }\n\t\n    return t;\n}\n\nfloat CastIrisRay(in vec3 ro, in vec3 rd)\n{\n    const float maxd = 0.5;\n    \n\tfloat h = 1.0;\n    float t = 0.0;\n   \n    for (int i = 0; i < 8; ++i)\n    {\n        if (h < 0.001 || t > maxd)\n        {\n            break;\n        }\n        \n\t    h = IrisScene(ro + rd * t);\n        t += h;\n    }\n\n    if (t > maxd)\n    {\n        t = -1.0;\n    }\n\t\n    return t;\n}\n\n// https://www.unrealengine.com/en-US/blog/physically-based-shading-on-mobile\nvec3 EnvBRDFApprox(vec3 SpecularColor, float Roughness, float NdotV)\n{\n    const vec4 C0 = vec4(-1, -0.0275, -0.572, 0.022);\n    const vec4 C1 = vec4(1, 0.0425, 1.04, -0.04);\n    vec4 R = Roughness * C0 + C1;\n    float A004 = min(R.x * R.x, exp2(-9.28 * NdotV)) * R.x + R.y;\n    vec2 AB = vec2(-1.04, 1.04) * A004 + R.zw;\n    return SpecularColor * AB.x + AB.y;\n}\n\n// https://www.shadertoy.com/view/4djSRW\nfloat Hash12(vec2 p)\n{\n\tvec3 p3  = fract(vec3(p.xyx) * .1031);\n    p3 += dot(p3, p3.yzx + 19.19);\n    return fract((p3.x + p3.y) * p3.z);\n}\n\n// https://www.shadertoy.com/view/4ddfWr\nfloat SmoothNoise(in vec2 o) \n{\n\tvec2 p = floor(o);\n\tvec2 f = fract(o);\n\n\tfloat a = Hash12(p);\n\tfloat b = Hash12(p+vec2(1,0));\n\tfloat c = Hash12(p+vec2(0,1));\n\tfloat d = Hash12(p+vec2(1,1));\n\t\n\tvec2 f2 = f * f;\n\tvec2 f3 = f2 * f;\n\t\n\tvec2 t = 3.0 * f2 - 2.0 * f3;\n\t\n\tfloat u = t.x;\n\tfloat v = t.y;\n\n\tfloat res = a + (b-a)*u +(c-a)*v + (a-b+d-c)*u*v;\n    \n    return res;\n}\n\nfloat IrisTexture(vec2 UV)\n{\n    float Spots = 1.5 * texture(iChannel1, 3.0 * UV).x;\n    \n    UV *= 10.0;\n    \n    float Ret = SmoothNoise(10.0 * UV / pow(length(UV), 0.7)) * 0.7;\n        \n    UV *= 30.0;\n\n    Ret += SmoothNoise(10.0 * UV / pow(length(UV), 0.7)) * 0.7;\n    \n    return Ret * Spots;\n}\n\nvoid Repeat(inout float p, float w)\n{\n    p = mod(p, w) - 0.5 * w;\n}\n\nfloat SkinHeight(vec2 Pos, float StoneMask)\n{    \n    float Skin = 1.0 - mix(texture(iChannel1, 1.0 * Pos.xy).x, texture(iChannel1, 2.0 * Pos.xy).x, 0.3);\n    float Stone = mix(texture(iChannel1, 0.5 * Pos.xy).x, texture(iChannel1, 1.3 * Pos.xy).x, 0.3);\n    \n    return mix(Skin, Stone, StoneMask);\n}\n\nfloat Circle(vec2 Pos, float Radius)\n{\n    return (length(Pos / Radius) - 1.0) * Radius;\n}\n\nfloat VeinTexture(vec2 EyeUV)\n{\n    float Veins = 10000.0;\n    \n    vec2 Pos = EyeUV.xy - 0.5 + 0.05;\n    Pos.x = abs(Pos.x);\n    \n    vec2 TempPos = Pos.xy;\n    Rotate(TempPos.xy, SmoothNoise(EyeUV.xy*30.0)*0.3 + SmoothNoise(EyeUV.xy*10.0)*0.1);\n    Veins = min(Veins, abs(TempPos.y));\n    \n    TempPos = Pos.xy + vec2(0.0, -0.05);\n    Rotate(TempPos.xy, SmoothNoise(EyeUV.xy*40.0)*0.3 + SmoothNoise(EyeUV.xy*15.0)*0.1);\n    Veins = min(Veins, abs(TempPos.y));\n    \n    TempPos = Pos.xy + vec2(0.0, -0.03);\n    Rotate(TempPos.xy, SmoothNoise(EyeUV.xy*50.0)*0.3 + SmoothNoise(EyeUV.xy*20.0)*0.1);\n    Veins = min(Veins, abs(TempPos.y));\n    \n    TempPos = Pos.xy + vec2(0.0, -0.01);\n    Rotate(TempPos.xy, SmoothNoise(EyeUV.xy*40.0)*0.3 + SmoothNoise(EyeUV.xy*20.0)*0.1);\n    Veins = min(Veins, abs(TempPos.y));    \n    \n    TempPos = Pos.xy + vec2(0.0, -0.07);\n    Rotate(TempPos.xy, SmoothNoise(EyeUV.xy*30.0)*0.3 + SmoothNoise(EyeUV.xy*10.0)*0.1);\n    Veins = min(Veins, abs(TempPos.y));     \n    \n    return exp(-Veins * 30.0);\n}\n\nvec3 EyeballTexture(vec2 EyeUV)\n{\n    vec3 Color = vec3(1.0, 0.95, 0.9);\n    \n    float BloodNoise = pow(0.3 * texture(iChannel1, 3.0 * EyeUV).x + 0.7 * texture(iChannel1, 1.0 * EyeUV).x, 0.5);\n    BloodNoise = (0.5 * BloodNoise - 0.5);\n    float Blood = smoothstep(0.15, 0.45, 0.5 * BloodNoise + 2.0 * length(abs(EyeUV-vec2(0.49, 0.5))));\n    \n    float VeinMask = VeinTexture(EyeUV) * 0.6 * smoothstep(0.0, 0.15, length(EyeUV-vec2(0.49, 0.5))-0.04);\n    \n    Color = mix(Color, BLOOD_COLOR, Blood);\n    Color = mix(Color, BLOOD_COLOR, VeinMask);\n    \n    return Color;\n}\n\nvoid RotateEyeTo(float Time, float StartTime, float Speed, vec2 TargetRot)\n{    \n    float LocalTime = Time - StartTime;    \n    float RotDist = length(GEyeRot - TargetRot);\n    float RotTime = RotDist / Speed;\n    \n    // Smooth start and stop\n    float T = smoothstep(0.0, 1.0, saturate(LocalTime / RotTime));\n    \n    // Overshoot and come back\n    T += T > 0.0 ? mix(0.1, 0.0, saturate((LocalTime - RotTime) / (0.1))) : 0.0;\n    \n    GEyeRot = mix(GEyeRot, TargetRot, T);\n}\n\nvoid mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n    // Scene\n    float SceneTime = mod(iTime, 48.0);\n\n    float FadeOutStart = 36.0;\n    float FadeInStart = 44.0;\n    float FadeInSpeed = 0.25;\n    float FadeOutSpeed = 0.25;\n\tfloat SceneFade = SceneTime < FadeInStart\n    \t\t\t\t? smoothstep(0.0, 1.0, saturate(FadeOutSpeed * (SceneTime - FadeOutStart))) \n    \t\t\t\t: smoothstep(1.0, 0.0, saturate(FadeOutSpeed * (SceneTime - FadeInStart)));\n    float StoneTime = SceneTime < FadeInStart ? max(SceneTime - 15.0, 0.0) : 0.0;\n    float StoneFadeTime = 0.2 * StoneTime;\n    float AnimTime = SceneTime < FadeInStart ? min(SceneTime, 25.0) : 0.0;\n    \n\tfloat ZoomIn = smoothstep(8.0, 9.5, SceneTime) * smoothstep(17.0, 16.0, SceneTime);\n    \n    // Macro eye movement\n    float EyeRotTime = mod(AnimTime, 8.0);\n\tGEyeRot = vec2(0.0, 0.0);\n    \n    RotateEyeTo(EyeRotTime, 00.4, 0.50, vec2(-0.03, -0.00));\n    RotateEyeTo(EyeRotTime, 00.8, 0.50, vec2(+0.04, +0.00));  \n    RotateEyeTo(EyeRotTime, 01.2, 0.50, vec2(+0.00, +0.00));\n    RotateEyeTo(EyeRotTime, 01.6, 0.50, vec2(-0.02, +0.00));\n    \n    RotateEyeTo(EyeRotTime, 02.0, 0.90, vec2(-0.15, -0.10));\n    RotateEyeTo(EyeRotTime, 02.6, 0.90, vec2(-0.10, -0.10));\n    \n    RotateEyeTo(EyeRotTime, 03.0, 1.30, vec2(+0.19, -0.08));\n    RotateEyeTo(EyeRotTime, 03.5, 1.00, vec2(+0.12, -0.09));\n    RotateEyeTo(EyeRotTime, 04.0, 2.00, vec2(-0.20, +0.00));\n    RotateEyeTo(EyeRotTime, 05.0, 2.00, vec2(+0.20, -0.05));\n    RotateEyeTo(EyeRotTime, 06.0, 0.80, vec2(+0.10, +0.05));\n    RotateEyeTo(EyeRotTime, 07.0, 0.25, vec2(+0.07, +0.03));\n    RotateEyeTo(EyeRotTime, 07.9, 0.80, vec2(+0.00, +0.00));\n    \n\n    // Eyelid movement\n    GEyelidRot.x = min(0.0, -2.0 * GEyeRot.y - 0.2);\n    GEyelidRot.y = +GEyeRot.y + 0.1;\n    \n\tfloat BlinkTime = mod(AnimTime - 2.5, 5.0);\n    float Blink = smoothstep(0.3, 0.0, BlinkTime);\n    GEyelidRot.xy = mix(GEyelidRot.xy, vec2(0.8, 0.8), vec2(Blink));\n    \n    \n    GEyeBrowDown = Blink * 1.5 - 6.0 * GEyeRot.y;\n    \n    \n\tvec2 ScreenUV = fragCoord.xy / iResolution.xy;\n    vec2 ScreenPos = -1.0 + 2.0 * ScreenUV;\n\tScreenPos.x *= iResolution.x / iResolution.y;\n    ScreenPos.x *= -1.0;\n\n    float FOV = 3.0;\n    float AngleZ = -0.6;\n    vec3 RayOrigin = vec3(-0.8, -0.1, -3.5);\n    \n    AngleZ = mix(AngleZ, -0.1, pow(ZoomIn, 2.0));\n    RayOrigin = mix(RayOrigin, vec3(-0.02, -0.05, -2.3), ZoomIn);\n    \n    RayOrigin.x += sin(1.5 * 3.0 * AnimTime * 0.3) * 0.01 * (1.0 - 0.5 * ZoomIn);\n    RayOrigin.y += cos(1.5 * 2.0 * AnimTime * 0.3) * 0.02 * (1.0 - 0.5 * ZoomIn);\n\tvec3 RayDir = normalize(vec3(ScreenPos.xy, FOV));\n    \n    Rotate(RayOrigin.xz, AngleZ);\n    Rotate(RayDir.xz, AngleZ);    \n   \n\n    float DOFMask = 1.0;\n    vec3 BackgroundColorA = 0.7 * vec3(0.03, 0.04, 0.04);\n    vec3 BackgroundColorB = 0.7 * vec3(0.22, 0.33, 0.39);\n    vec3 Background = mix(\n        BackgroundColorA, \n        BackgroundColorB, \n        vec3(smoothstep(0.5, 1.0, ScreenUV.x) * smoothstep(0.0, 0.8, ScreenUV.y)));\n    vec3 Color = Background;\n    \n\tfloat t = CastRay(RayOrigin, RayDir);\n    if (t > 0.0)\n    {                \n        vec3 Pos = RayOrigin + t * RayDir;\n        vec3 LightDir = normalize(vec3(-0.5, 0.5, -0.5));\n        \n        float Eps = 0.001;      \n        float GeomHeight0 = Scene(Pos);\n        float GeomHeightX = Scene(Pos - vec3(Eps, 0.0, 0.0));\n\t\tfloat GeomHeightY = Scene(Pos - vec3(0.0, Eps, 0.0));\n        float GeomHeightZ = Scene(Pos - vec3(0.0, 0.0, Eps));\n        \n        vec3 Normal;\n        Normal.x = GeomHeight0 - GeomHeightX;\n        Normal.y = GeomHeight0 - GeomHeightY;\n        Normal.z = GeomHeight0 - GeomHeightZ;\n        Normal = normalize(Normal);        \n        \n        vec3 ViewDir = -RayDir;\n        float NdotV = saturate(dot(Normal, ViewDir));        \n        \n        vec3 EyePos = Pos;\n        Rotate(EyePos.xz, GEyeRot.x);\n        Rotate(EyePos.yz, GEyeRot.y);\n        \n        vec3 SpherePos = normalize(EyePos);\n        vec2 EyeUV = vec2(1.0 + (atan(SpherePos.z, SpherePos.x)) / (PI), 0.5 - asin(SpherePos.y) / PI);\n        float IrisMask = smoothstep(0.03, 0.0, length(EyeUV-0.5) - 0.06);\n        float LimbalRingMask = smoothstep(0.01, 0.0, length(EyeUV-0.5) - 0.075) * smoothstep(-0.02, 0.007, length(EyeUV-0.5) - 0.075);\n        \n        vec2 IrisUV = EyeUV;\n        if (IrisMask > 0.0)\n        {\n            vec3 IrisRayOrigin = Pos;\n                        \n            vec3 RefrRayV = refract(RayDir, Normal, 0.5);\n            vec3 IrisRayDir = normalize(mix(RayDir, RefrRayV, smoothstep(0.0, 1.0, saturate(length(RefrRayV)))));            \n            \n            float IrisT = CastIrisRay(IrisRayOrigin, IrisRayDir);\n            vec3 IrisPos = IrisRayOrigin + IrisT * IrisRayDir;\n            \n\t\t\tvec3 SpherePos = IrisPos;\n        \tRotate(SpherePos.xz, GEyeRot.x);\n            Rotate(SpherePos.yz, GEyeRot.y);\n            SpherePos = normalize(SpherePos);\n            IrisUV = vec2(1.0 + (atan(SpherePos.z, SpherePos.x)) / PI, 0.5 - asin(SpherePos.y) / PI);\n        }\n        \n        vec3 IrisGreen = saturate(vec3(0.11, 0.13, 0.06) * 5.0);\n        vec3 IrisYellow = saturate(vec3(0.2, 0.13, 0.06) * 5.0);\n        \n        float IrisYellowMask = smoothstep(0.045, 0.02, length(IrisUV-0.5));\n        \n        IrisYellowMask = max(IrisYellowMask, smoothstep(0.3, 0.9, texture(iChannel1, 5.0 * IrisUV).x));\n        \n        vec3 IrisBaseColor = vec3(IrisTexture(IrisUV-0.5)) * mix(IrisGreen, IrisYellow, IrisYellowMask);\n\n        float IrisBlackSpotMask = smoothstep(0.055, 0.045, length(IrisUV-0.5)) * smoothstep(0.4, 1.0, texture(iChannel1, 20.0 * IrisUV).x);\n        IrisBaseColor *= 1.0 - IrisBlackSpotMask;\n       \n\t\tfloat Pupil = smoothstep(0.02, 0.0, length(IrisUV-0.5) - 0.018);\n        \n        vec3 BaseColor = EyeballTexture(EyeUV);\n        BaseColor = mix(BaseColor, IrisBaseColor, IrisMask);\n        BaseColor = mix(BaseColor, vec3(0.0), max(LimbalRingMask, Pupil));\n\n        // Skin\n        float SkinMask = smoothstep(0.00, 0.01, EyeballSDF(Pos));\n        \n        vec3 SkinBaseColor0 = vec3(0.64, 0.39, 0.30);\n        vec3 SkinBaseColor1 = 0.8 * vec3(0.48, 0.18, 0.10);\n        \n        float SkinSpots = 0.0;\n        SkinSpots = max(SkinSpots, texture(iChannel0, 1.7 * (Pos.xy + 0.11)).x);\n        SkinSpots = max(SkinSpots, texture(iChannel0, 1.1 * (Pos.xy + 0.17)).x);\n        SkinSpots = max(SkinSpots, texture(iChannel0, 0.3 * (Pos.xy + 0.79)).x);\n        \n        vec3 SkinBaseColor = mix(SkinBaseColor0, SkinBaseColor1, vec3(SkinSpots));\n        \n\t\tfloat EyelidCutDist = EyelidCutSDF(Pos);\n        float EyelidInteriorMask = smoothstep(0.1, 0.0, EyelidCutDist);\n        SkinBaseColor = mix(SkinBaseColor, mix(BLOOD_COLOR, SkinBaseColor0, 0.5), EyelidInteriorMask);        \n        \n        vec3 StoneBaseColor = mix(\n            vec3(0.05), \n            vec3(0.67, 0.57, 0.40), \n            pow(texture(iChannel2, 0.5 * Pos.xy + vec2(0.61, 0.49)).xxx, vec3(2.2)));\n        \n        float Edge0 = StoneFadeTime + length(Pos) - 2.0;\n        float Edge1 = Edge0 - 0.02;\n        float StoneMaskTex = mix(texture(iChannel1, 0.5 * Pos.xy + 0.5).x, texture(iChannel2, 0.5 * Pos.xy + 0.5).x, 0.5);\n        float StoneMask = smoothstep(Edge0 - 0.5, Edge1 - 0.5, StoneMaskTex);\n        float NormalStoneMask = smoothstep(Edge0, Edge1, StoneMaskTex);\n        float EyeStoneMask = smoothstep(2.2, 3.5, StoneFadeTime);\n\n        float EyeAOMask = smoothstep(-0.1, 0.00, EyelidCutDist);\n        BaseColor *= mix(vec3(1.0), SkinBaseColor1, EyeAOMask);\n\n        SkinBaseColor = mix(SkinBaseColor, StoneBaseColor, StoneMask);\n        BaseColor = mix(BaseColor, SkinBaseColor, SkinMask);\n        \n        float EyeCornerMask = smoothstep(0.05, 0.0, EyeCornerSDF(Pos)) * (1.0 - SkinMask);\n        BaseColor = mix(BaseColor, 0.6 * BLOOD_COLOR, EyeCornerMask);\n\n        BaseColor = mix(BaseColor, StoneBaseColor, EyeStoneMask);\n        \n       \tvec3 WetnessNormal = Normal;\n        WetnessNormal.xyz += (SmoothNoise(EyeUV.xy * 60.0) - 0.5) * 0.05;\n        WetnessNormal = normalize(WetnessNormal);\n        \n        float SkinHeight0 = SkinHeight(5.0 * Pos.xy, NormalStoneMask);\n        float SkinHeightX = SkinHeight(5.0 * (Pos.xy + vec2(Eps, 0.0)), NormalStoneMask);\n        float SkinHeightY = SkinHeight(5.0 * (Pos.xy + vec2(0.0, Eps)), NormalStoneMask);\n        \n        float BumpStrength = mix(0.005, 0.01, NormalStoneMask);\n        \n        vec3 SkinNormal;\n        SkinNormal.x = GeomHeight0 - GeomHeightX + (SkinHeight0 - SkinHeightX) * BumpStrength;\n        SkinNormal.y = GeomHeight0 - GeomHeightY + (SkinHeight0 - SkinHeightY) * BumpStrength;\n        SkinNormal.z = GeomHeight0 - GeomHeightZ;\n        SkinNormal = normalize(SkinNormal);\n        \n        vec3 BaseNormal = Normal;\n        BaseNormal = mix(BaseNormal, SkinNormal, NormalStoneMask);\n        WetnessNormal = mix(WetnessNormal, SkinNormal, NormalStoneMask);        \n        \n        vec3 LayerNormal = mix(Normal, WetnessNormal, 1.0 - IrisMask);\n        LayerNormal = normalize(mix(LayerNormal, SkinNormal, SkinMask * (1.0 - EyelidInteriorMask)));\n        vec3 Reflection = reflect(RayDir, LayerNormal);\n        \n        float Shadow = smoothstep(0.0, 1.0, length(Pos - vec3(0.8, 0.1, -0.1)) - 0.6);\n        \n        Color = BaseColor * (Shadow * saturate(dot(BaseNormal, LightDir)) + vec3(0.1,0.05,0.0));\n        //Color = vec3(1.0) * saturate(dot(BaseNormal, LightDir));\n        \n        float EyeReflectionOcclusion = (1.0 - EyeCornerMask)\n            * smoothstep(+0.04, +0.01, EyelidCutDist) \n            * smoothstep(-0.04, -0.01, EyelidCutDist);\n        vec3 SpecularColor = vec3(mix(0.04, 0.02, SkinMask * (1.0 - StoneMask)));\n        vec3 EnvSpecularColor = EnvBRDFApprox(SpecularColor, 0.0, NdotV) * (1.0 - EyeReflectionOcclusion);\n        \n        vec3 Env = pow(2.0 * texture(iChannel3, Reflection).xxx, vec3(2.2));\n        \n        Env *= mix(1.0, smoothstep(0.0, 0.2, BaseColor.y), NormalStoneMask);\n        Env *= mix(1.0, 0.5, SkinMask * (1.0 - StoneMask));\n        \n        Color += Shadow * EnvSpecularColor * Env;\n        \n        \n        float EdgeAA = pow(smoothstep(0.5, 1.0, 1.0 + dot(RayDir, Normal)), 1.0);\n        EdgeAA *= smoothstep(-0.5, -1.5, Pos.x);\n        \n        vec3 TempPos = Pos;\n        Rotate(TempPos.xy, -0.15 * PI);\n        Rotate(TempPos.xz, 0.1 * PI);  \n        EdgeAA = max(EdgeAA, smoothstep(0.3, 0.05, TempPos.x + 2.1));\n\n        Color = mix(Color, Background, EdgeAA);\n        \n        DOFMask = max(smoothstep(2.6, 1.6, t), smoothstep(3.0, 5.1, t));\n    }\n\n    // Fade out\n\tColor = mix(Color, BackgroundColorA, SceneFade);\n                    \n    fragColor = vec4(Color, DOFMask);\n}",
+      "name": "Buffer A",
+      "description": "",
+      "type": "buffer"
+    }
+  ]
+}
