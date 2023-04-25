@@ -1,7 +1,8 @@
 use std::{error::Error, fs::read_to_string, time::Instant};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use imager::{
+    framework::Setup,
     francis::Francis,
     screenshot::{scrot_new, Ctx},
     shader_toy,
@@ -31,11 +32,21 @@ enum Shader {
     },
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Mode {
+    Window,
+    Francis,
+    Desktop,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct FrancisArgs {
+    #[arg(value_enum, short, long, default_value_t = Mode::Window)]
+    mode: Mode,
+
     /// Francis location
-    addr: String,
+    addr: Option<String>,
 
     #[arg(short, long)]
     x: Option<u16>,
@@ -48,10 +59,7 @@ pub struct FrancisArgs {
 
 async fn run_francis() -> Result<(), Box<dyn Error>> {
     let args = FrancisArgs::parse();
-    let mut francis = Francis::new(&args.addr, args.x, args.y).await.unwrap();
-    println!("Created francis");
 
-    let ctx = Ctx::new::<shader_toy::Example>().await;
     println!("Got GPU Ctx");
 
     let spawner = Spawner::new();
@@ -108,22 +116,54 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
         client: client.unwrap_or(Client::new("".into())),
     };
 
-    let mut runner =
-        scrot_new::<shader_toy::Example>(ctx, spawner, francis.width(), francis.height(), input)
+    match args.mode {
+        Mode::Window | Mode::Desktop => {
+            let display = match args.mode {
+                Mode::Window => imager::Display::Window,
+                Mode::Desktop => imager::Display::Desktop,
+                _ => unreachable!(),
+            };
+
+            let args = imager::Args {
+                x_pos: 0,
+                y_pos: 0,
+                width: args.x.unwrap_or(500) as u32,
+                height: args.y.unwrap_or(500) as u32,
+                single: false,
+                display,
+            };
+            let setup = imager::framework::setup::<shader_toy::Example>(&args).await;
+            imager::framework::start::<shader_toy::Example>(setup, args, input).await;
+            Ok(())
+        }
+        Mode::Francis => {
+            let mut francis = Francis::new(&args.addr.expect("Please specify addr"), args.x, args.y).await.unwrap();
+            println!("Created francis");
+
+            let ctx = Ctx::new::<shader_toy::Example>().await;
+
+            let mut runner = scrot_new::<shader_toy::Example>(
+                ctx,
+                spawner,
+                francis.width(),
+                francis.height(),
+                input,
+            )
             .await?;
+            let start = Instant::now();
+            let mut count = 0;
+            let mut fps = Instant::now();
+            loop {
+                let frame = runner.frame(start.elapsed().as_secs_f32()).await;
+                francis.write(frame.buffer, 4).await.unwrap();
 
-    let start = Instant::now();
-    let mut count = 0;
-    let mut fps = Instant::now();
-    loop {
-        let frame = runner.frame(start.elapsed().as_secs_f32()).await;
-        francis.write(frame.buffer, 4).await.unwrap();
-
-        count += 1;
-        if fps.elapsed().as_secs_f32() > 1.0 {
-            fps = Instant::now();
-            println!("fps {}", count);
-            count = 0;
+                count += 1;
+                if fps.elapsed().as_secs_f32() > 1.0 {
+                    fps = Instant::now();
+                    println!("fps {}", count);
+                    count = 0;
+                }
+            }
         }
     }
 }

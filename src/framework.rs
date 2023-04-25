@@ -124,22 +124,24 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
             x: args.x_pos,
             y: args.y_pos,
         })
-        .with_override_redirect(true);
+        .with_override_redirect(args.display.needs_override());
 
     let window = builder.build(&event_loop).unwrap();
 
-    let display_id = match window.raw_display_handle() {
-        raw_window_handle::RawDisplayHandle::Xlib(handle) => handle.display,
-        _ => panic!(),
-    };
+    if args.display.is_desktop() {
+        let display_id = match window.raw_display_handle() {
+            raw_window_handle::RawDisplayHandle::Xlib(handle) => handle.display,
+            _ => panic!(),
+        };
 
-    let window_id = match window.raw_window_handle() {
-        raw_window_handle::RawWindowHandle::Xlib(handle) => handle.window,
-        _ => panic!(),
-    };
+        let window_id = match window.raw_window_handle() {
+            raw_window_handle::RawWindowHandle::Xlib(handle) => handle.window,
+            _ => panic!(),
+        };
 
-    unsafe {
-        (xlib.XLowerWindow)(display_id.cast(), window_id);
+        unsafe {
+            (xlib.XLowerWindow)(display_id.cast(), window_id);
+        }
     }
 
     log::info!("Initializing the surface...");
@@ -162,7 +164,7 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
 
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         })
@@ -204,7 +206,7 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
     }
 }
 
-pub async fn start<I, E: Renderable + RenderableConfig<Input = I>>(
+pub async fn start<E: Renderable + RenderableConfig>(
     Setup {
         window,
         event_loop,
@@ -216,7 +218,7 @@ pub async fn start<I, E: Renderable + RenderableConfig<Input = I>>(
         queue,
     }: Setup,
     args: Args,
-    input: I,
+    input: E::Input,
 ) {
     let spawner = Spawner::new();
     let mut config = surface

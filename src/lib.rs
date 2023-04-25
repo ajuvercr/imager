@@ -15,22 +15,38 @@ pub enum Event {
 }
 
 /// Simple program to greet a person
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[derive(Debug)]
 pub struct Args {
-    #[arg(short, long, default_value_t = 0)]
-    x_pos: u32,
-    #[arg(short, long, default_value_t = 0)]
-    y_pos: u32,
+    pub x_pos: u32,
+    pub y_pos: u32,
 
-    #[arg(short, long, default_value_t = 64)]
-    width: u32,
-    #[arg(long, default_value_t = 64)]
-    height: u32,
+    pub width: u32,
+    pub height: u32,
 
-    #[arg(short, long, default_value_t = false)]
-    single: bool,
-    // output: Option<String>,
+    pub single: bool,
+
+    pub display: Display,
+}
+
+#[derive(Debug)]
+pub enum Display {
+    Window,
+    Desktop,
+}
+impl Display {
+    pub fn needs_override(&self) -> bool {
+        match self {
+            Display::Window => false,
+            Display::Desktop => true,
+        }
+    }
+
+    pub fn is_desktop(&self) -> bool {
+        match self {
+            Display::Window => false,
+            Display::Desktop => true,
+        }
+    }
 }
 
 pub struct Spawner<'a> {

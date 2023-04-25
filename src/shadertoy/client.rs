@@ -231,12 +231,11 @@ impl Client {
 
                 let url = format!("{}_{}{}", start, i, end);
 
-                let bytes = self.get_resource(resource).await?;
+                let bytes = self.get_resource(&url).await?;
                 let img2 = ImageReader::new(Cursor::new(bytes))
                     .with_guessed_format()?
                     .decode()?;
 
-                let size = (img2.width(), img2.height());
                 raw.extend_from_slice(&img2.into_rgba8().as_raw());
             }
 
