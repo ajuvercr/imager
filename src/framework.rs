@@ -165,7 +165,7 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
+            compatible_surface: None,
             force_fallback_adapter: false,
         })
         .await
@@ -204,6 +204,47 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
         device,
         queue,
     }
+}
+
+pub async fn screen<E: Renderable + RenderableConfig>(
+    Setup {
+        ref size,
+        ref surface,
+        ref adapter,
+        ref device,
+        ref queue,
+        ..
+    }: &Setup,
+    input: E::Input,
+) {
+    let spawner = Spawner::new();
+    let config = surface
+        .get_default_config(&adapter, size.width, size.height)
+        .expect("Surface isn't supported by the adapter.");
+    surface.configure(&device, &config);
+
+    log::info!("Initializing the example...");
+    let mut example = E::init(&config, &adapter, &device, &queue, input)
+        .await
+        .unwrap();
+
+    let frame = match surface.get_current_texture() {
+        Ok(frame) => frame,
+        Err(_) => {
+            surface.configure(&device, &config);
+            surface
+                .get_current_texture()
+                .expect("Failed to acquire next surface texture!")
+        }
+    };
+
+    let view = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+    example.render(&view, &device, &queue, &spawner);
+
+    frame.present();
 }
 
 pub async fn start<E: Renderable + RenderableConfig>(

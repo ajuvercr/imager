@@ -2,7 +2,6 @@ use std::{error::Error, fs::read_to_string, time::Instant};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use imager::{
-    framework::Setup,
     francis::Francis,
     screenshot::{scrot_new, Ctx},
     shader_toy,
@@ -55,6 +54,22 @@ pub struct FrancisArgs {
 
     #[command(subcommand)]
     command: Shader,
+}
+
+fn fuji_args() -> shader_toy::Args {
+    let rps = vec![RenderPass {
+        inputs: vec![],
+        outputs: vec![],
+        code: include_str!("../../shaders/splash.glsl").to_string(),
+        name: "Source Shader".into(),
+        description: "".into(),
+        pass_type: "image".into(),
+    }];
+
+    shader_toy::Args {
+        rps,
+        client: Client::new("".into()),
+    }
 }
 
 async fn run_francis() -> Result<(), Box<dyn Error>> {
@@ -133,11 +148,15 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
                 display,
             };
             let setup = imager::framework::setup::<shader_toy::Example>(&args).await;
+            imager::framework::screen::<shader_toy::Example>(&setup, fuji_args()).await;
             imager::framework::start::<shader_toy::Example>(setup, args, input).await;
             Ok(())
         }
         Mode::Francis => {
-            let mut francis = Francis::new(&args.addr.expect("Please specify addr"), args.x, args.y).await.unwrap();
+            let mut francis =
+                Francis::new(&args.addr.expect("Please specify addr"), args.x, args.y)
+                    .await
+                    .unwrap();
             println!("Created francis");
 
             let ctx = Ctx::new::<shader_toy::Example>().await;
