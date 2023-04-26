@@ -4,8 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use imager::{
     francis::Francis,
     screenshot::{scrot_new, Ctx},
-    shader_toy,
-    shadertoy::{Client, RenderPass},
+    shadertoy::{self as shader_toy, Client, RenderPass},
     Spawner,
 };
 
@@ -69,6 +68,7 @@ fn fuji_args() -> shader_toy::Args {
     shader_toy::Args {
         rps,
         client: Client::new("".into()),
+        name: "Splash".into(),
     }
 }
 
@@ -79,22 +79,27 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
 
     let spawner = Spawner::new();
 
-    let mut client = None;
-    let rps = match args.command {
+    let input = match args.command {
         Shader::Source { location } => {
-            let source = match location {
+            let source = match &location {
                 Some(name) => std::fs::read_to_string(name)?,
                 None => include_str!("../../shaders/cyber_fuji.glsl").to_string(),
             };
 
-            vec![RenderPass {
+            let rps = vec![RenderPass {
                 inputs: vec![],
                 outputs: vec![],
                 code: source,
                 name: "Source Shader".into(),
                 description: "".into(),
                 pass_type: "image".into(),
-            }]
+            }];
+
+            shader_toy::Args {
+                rps,
+                client: Client::new("".into()),
+                name: location.unwrap_or("cyber_fuji".to_string()),
+            }
         }
         Shader::Local { api, location } => {
             let st = read_to_string(location)?;
@@ -103,32 +108,36 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
                 "Runnering shader toy shader {} by {}",
                 shader.info.name, shader.info.username
             );
-            client = Some(Client::new(&api));
 
-            shader.renderpass
+            let client = Client::new(&api);
+
+            shader_toy::Args {
+                rps: shader.renderpass,
+                client,
+                name: shader.info.name,
+            }
         }
         Shader::Toy {
             api,
             shader_id,
             save,
         } => {
-            let c = Client::new(&api);
-            let shader = c
+            let client = Client::new(&api);
+            let shader = client
                 .get_shader(&shader_id, save.as_ref().map(|x| x.as_str()))
                 .await?;
+
             println!(
                 "Runnering shader toy shader {} by {}",
                 shader.info.name, shader.info.username
             );
-            client = Some(c);
 
-            shader.renderpass
+            shader_toy::Args {
+                rps: shader.renderpass,
+                client,
+                name: shader.info.name,
+            }
         }
-    };
-
-    let input = shader_toy::Args {
-        rps,
-        client: client.unwrap_or(Client::new("".into())),
     };
 
     match args.mode {

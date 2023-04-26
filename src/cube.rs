@@ -89,7 +89,6 @@ pub struct Example {
     index_buf: wgpu::Buffer,
     index_count: usize,
     bind_group: wgpu::BindGroup,
-    uniform_buf: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     pipeline_wire: Option<wgpu::RenderPipeline>,
 }
@@ -312,7 +311,6 @@ impl RenderableConfig for Example {
             index_buf,
             index_count: index_data.len(),
             bind_group,
-            uniform_buf,
             pipeline,
             pipeline_wire,
         })

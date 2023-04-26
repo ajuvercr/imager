@@ -1,11 +1,9 @@
-use clap::Parser;
 use std::{error::Error, future::Future};
 
 pub mod cube;
 pub mod framework;
 pub mod francis;
 pub mod screenshot;
-pub mod shader_toy;
 pub mod shadertoy;
 pub mod util;
 

@@ -1,11 +1,11 @@
-use std::{io::Cursor, net::SocketAddr};
+use std::io::Cursor;
 
 use async_std::{
     io::{self, ReadExt, WriteExt},
     net::{TcpStream, ToSocketAddrs},
 };
+use byteorder::WriteBytesExt;
 use byteorder::{BigEndian, ReadBytesExt};
-use byteorder::{LittleEndian, WriteBytesExt};
 use wgpu::util::align_to;
 
 pub struct Francis {

@@ -1,5 +1,6 @@
 use super::errors::*;
 use super::types::*;
+use super::util::InputType;
 use error_chain::bail;
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -212,7 +213,7 @@ impl Client {
         Ok(data.to_vec())
     }
 
-    pub async fn get_png(&self, resource: &str, is_cube: bool) -> Result<(Vec<u8>, (u32, u32))> {
+    pub async fn get_png(&self, resource: &str, input_type: InputType) -> Result<(Vec<u8>, (u32, u32))> {
         use image::io::Reader as ImageReader;
 
         let bytes = self.get_resource(resource).await?;
@@ -223,7 +224,7 @@ impl Client {
         let size = (img2.width(), img2.height());
         let mut raw = img2.into_rgba8().into_raw();
 
-        if is_cube {
+        if input_type.is_cube() {
             let dot_idx = resource.rfind('.').unwrap();
             let (start, end) = resource.split_at(dot_idx);
             for i in 1..6 {
@@ -243,26 +244,5 @@ impl Client {
         } else {
             Ok((raw, size))
         }
-
-        // let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info()?;
-        //
-        // let mut buf = vec![0; reader.output_buffer_size()];
-        // let info = reader.next_frame(&mut buf).unwrap();
-        //
-        // let mut tmp = vec![0; reader.output_buffer_size()];
-        // let mut i = 1;
-        // while reader.next_frame(&mut tmp).is_ok() {
-        //     i += 1;
-        // }
-        // println!(
-        //     "expected {} * {} * 4 = {} = {}",
-        //     info.width,
-        //     info.height,
-        //     info.width * info.height * 4,
-        //     reader.output_buffer_size()
-        // );
-        // println!("found {i} frames!");
-        //
-        // Ok((buf, info))
     }
 }
