@@ -137,11 +137,11 @@ fn to_wgsl(source: &str, stage: naga::ShaderStage, name: &str, index: usize) -> 
         Err(e) => panic!("{}", e),
     };
 
-    let n = if stage == naga::ShaderStage::Vertex {
-        "vertex"
-    } else {
-        "frag"
-    };
+    // let n = if stage == naga::ShaderStage::Vertex {
+    //     "vertex"
+    // } else {
+    //     "frag"
+    // };
     // let file = format!("./tmp/{}_{}_{}.wgsl", name, n, index);
     // let mut f = std::fs::File::create(file).unwrap();
     let source = writer.finish();
@@ -493,7 +493,7 @@ pub struct Args {
     pub name: String,
 }
 impl Args {
-    pub async fn from_source(loc: Option<&str>) -> Result<Self, Box<dyn Error>> {
+    pub async fn from_source(loc: Option<String>) -> Result<Self, Box<dyn Error>> {
         let source = match &loc {
             Some(name) => read_to_string(name).await?,
             None => include_str!("../../shaders/cyber_fuji.glsl").to_string(),
@@ -511,10 +511,10 @@ impl Args {
         Ok(Args {
             rps,
             client: Client::new("".into()),
-            name: loc.unwrap_or("cyber_fuji").to_string(),
+            name: loc.unwrap_or("cyber_fuji".to_string()),
         })
     }
-    pub async fn from_local(api: &str, loc: &str) -> Result<Self, Box<dyn Error>> {
+    pub async fn from_local(api: &str, loc: String) -> Result<Self, Box<dyn Error>> {
         let st = read_to_string(loc).await?;
         let shader: super::Shader = serde_json::from_str(&st)?;
 
@@ -529,7 +529,7 @@ impl Args {
 
     pub async fn from_toy(
         api: &str,
-        shader_id: &str,
+        shader_id: String,
         save: Option<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let client = Client::new(&api);

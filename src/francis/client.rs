@@ -37,10 +37,7 @@ impl Francis {
             height = h;
         }
 
-        println!("aligning {} to {}", width, align_to(width, 64));
-        println!("height {height}");
         let width = align_to(width, 64);
-
         Ok(Self {
             width,
             height,

@@ -14,7 +14,6 @@ clap = { version = "4.2.1", features = ["derive"] }
 glam = { version = "0.23.0", features = ["bytemuck"] }
 log = "0.4.17"
 naga = { version = "0.11.0", features = ["glsl-in", "wgsl-out"] }
-png = "0.17.7"
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
 wgpu = { version = "0.15.1", features = ["glsl", "naga"] }
@@ -32,4 +31,6 @@ futures-channel = "0.3.28"
 nanorand = "0.7.0"
 hyper = { version = "0.14.26", features = ["server", "stream", "http1", "http2"] }
 rayon = "1.7.0"
+futures-util = "0.3.28"
+async-channel = "1.8.0"
 

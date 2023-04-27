@@ -1,9 +1,8 @@
-use futures_channel::mpsc;
+use async_channel as mpsc;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server};
 use std::convert::Infallible;
-use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -15,6 +14,10 @@ error_chain::error_chain! {
             description("invalid http method")
             display("invalid http method: '{}'", t)
         }
+        SendError {
+            description("Send error occured")
+            display("send error occured")
+        }
     }
     foreign_links {
         Json(::serde_json::error::Error);
@@ -25,8 +28,9 @@ error_chain::error_chain! {
 async fn handle_post(context: mpsc::Sender<Command>, body: Body) -> Result<Response<Body>> {
     let body_bytes = hyper::body::to_bytes(body).await?;
     let body = serde_json::from_slice(&body_bytes)?;
+    context.send(body).await.map_err(|_| ErrorKind::SendError)?;
 
-    Ok(Response::new(Body::from("Hello World")))
+    Ok(Response::new(Body::from("Aight")))
 }
 
 async fn handle(

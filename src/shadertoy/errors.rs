@@ -5,7 +5,6 @@ error_chain::error_chain! {
         Io(::std::io::Error);
         Json(::serde_json::error::Error);
         Reqwest(::reqwest::Error);
-        Png(::png::DecodingError);
         Image(::image::error::ImageError);
     }
 }

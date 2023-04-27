@@ -3,8 +3,10 @@ use std::error::Error;
 use std::time::Duration;
 use std::time::Instant;
 
+use async_channel as mpsc;
 use async_std::task::sleep;
-use futures_channel::mpsc;
+use futures_util::future::select;
+use futures_util::future::Either;
 use serde::{Deserialize, Serialize};
 
 use crate::screenshot::scrot_new;
@@ -31,14 +33,24 @@ pub struct Options {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Send {
     shader: Option<String>,
     target: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Update {
+    run: Option<bool>,
+    sleep: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+#[serde(deny_unknown_fields)]
 pub enum Command {
-    Start,
+    Update(Update),
     Send(Send),
 }
 
@@ -53,6 +65,9 @@ pub struct Handler {
 
     names: Vec<String>,
     options: HashMap<String, usize>,
+
+    running: bool,
+    delay: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,74 +76,63 @@ pub struct Info {
     toys: Vec<String>,
 }
 
-use rayon::prelude::*;
+async fn create_scrot(
+    ctx: &Ctx,
+    w: u32,
+    h: u32,
+    args: Args,
+) -> Result<(AnimScrot<Example>, String), Box<dyn Error>> {
+    let name = args.name.clone();
+    let anim = scrot_new(ctx, w, h, args).await?;
+    Ok((anim, name))
+}
+
+use futures_util::{stream, StreamExt};
 impl Handler {
     pub async fn new(api: &str, input: Options, port: u16) -> Handler {
         let rand = WyRand::new();
-        let main = Francis::new(&input.francis, None, None).await.unwrap();
+
+        let clients: Vec<_> = stream::iter([input.francis])
+            .chain(stream::iter(input.small_francis))
+            .then(|fr| Francis::new(fr, None, None))
+            .map(|x| x.unwrap())
+            .collect()
+            .await;
+
+        let main = &clients[0];
         let (w, h) = (main.width(), main.height());
-        let mut clients = vec![main];
-
-
-        for fr in &input.small_francis {
-            let francis = Francis::new(fr, None, None).await.unwrap();
-            clients.push(francis);
-        }
 
         let ctx = Ctx::new::<Example>().await;
-        let mut i = 0;
         let mut options = HashMap::new();
+
+        let locals = stream::iter(input.local)
+            .then(|local| Args::from_local(api, local))
+            .map(|x| x.unwrap());
+        let toys = stream::iter(input.toy)
+            .then(|toy| Args::from_toy(api, toy, None))
+            .map(|x| x.unwrap());
+        let sources = stream::iter(input.source)
+            .then(|toy| Args::from_source(Some(toy)))
+            .map(|x| x.unwrap());
+
+        let toys_and_names: Vec<_> = locals
+            .chain(toys)
+            .chain(sources)
+            .then(|args| create_scrot(&ctx, w, h, args))
+            .map(|x| x.unwrap())
+            .collect()
+            .await;
 
         let mut toys = Vec::new();
         let mut names = Vec::new();
-
-        for local in &input.local {
-            if let Ok(args) = Args::from_local(api, &local).await {
-                add_toy(
-                    args,
-                    w,
-                    h,
-                    &mut toys,
-                    &mut options,
-                    &mut i,
-                    &mut names,
-                    &ctx,
-                )
-                .await;
-            }
-        }
-
-        for toy in &input.toy {
-            if let Ok(args) = Args::from_toy(api, &toy, None).await {
-                add_toy(
-                    args,
-                    w,
-                    h,
-                    &mut toys,
-                    &mut options,
-                    &mut i,
-                    &mut names,
-                    &ctx,
-                )
-                .await;
-            }
-        }
-
-        for source in &input.source {
-            if let Ok(args) = Args::from_source(Some(source)).await {
-                add_toy(
-                    args,
-                    w,
-                    h,
-                    &mut toys,
-                    &mut options,
-                    &mut i,
-                    &mut names,
-                    &ctx,
-                )
-                .await;
-            }
-        }
+        toys_and_names
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, (t, n))| {
+                options.insert(n.clone(), i);
+                toys.push(t);
+                names.push(n)
+            });
 
         let info = Info {
             screens: clients.iter().map(|x| (x.width(), x.height())).collect(),
@@ -136,7 +140,7 @@ impl Handler {
         };
         let info = serde_json::to_string_pretty(&info).unwrap();
 
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::bounded(10);
 
         tokio::spawn(start_server(port, tx, info));
 
@@ -149,47 +153,67 @@ impl Handler {
             rand,
             names,
             commands: rx,
+            running: true,
+            delay: 200,
         }
     }
 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         let start_time = Instant::now();
         loop {
-            match self.commands.try_next() {
-                Ok(Some(Command::Start)) => {
-                    eprintln!("Got unexpected start");
+            match select(
+                Box::pin(sleep(Duration::from_millis(self.delay))),
+                self.commands.recv(),
+            )
+            .await
+            {
+                Either::Left(_) => {} // `value1` is resolved from `future1`
+                Either::Right((comm, _)) => {
+                    self.handle_command(comm?).await?;
+                    continue;
                 }
-                Ok(Some(Command::Send(send))) => {
-                    self.handle_command(send).await?;
-                }
-                Ok(None) => return Ok(()),
-                Err(_) => {}
+            };
+
+            if self.running {
+                let francis = {
+                    let idx = self.rand.generate_range(0usize..self.clients.len());
+                    print!("Using francis {} ", idx);
+                    &mut self.clients[idx]
+                };
+                let toy = {
+                    let idx = self.rand.generate_range(0usize..self.toys.len());
+                    println!("for shader {}", self.names[idx]);
+                    &mut self.toys[idx]
+                };
+                let x = toy
+                    .frame(
+                        &self.ctx,
+                        start_time.elapsed().as_secs_f32(),
+                        Some((francis.width(), francis.height())),
+                    )
+                    .await;
+                francis.write(x.buffer, 4).await?;
             }
 
-            let francis = {
-                let idx = self.rand.generate_range(0usize..self.clients.len());
-                print!("Using francis {}", idx);
-                &mut self.clients[idx]
-            };
-            let toy = {
-                let idx = self.rand.generate_range(0usize..self.toys.len());
-                println!("for shader {}", self.names[idx]);
-                &mut self.toys[idx]
-            };
-            let x = toy
-                .frame(
-                    &self.ctx,
-                    start_time.elapsed().as_secs_f32(),
-                    Some((francis.width(), francis.height())),
-                )
-                .await;
-            francis.write(x.buffer, 4).await?;
-
-            sleep(Duration::from_millis(200)).await;
         }
     }
 
-    async fn handle_command(
+    async fn handle_command(&mut self, command: Command) -> Result<(), Box<dyn Error>> {
+        match command {
+            Command::Update(Update { run, sleep }) => {
+                if let Some(run) = run {
+                    self.running = run;
+                }
+                if let Some(sleep) = sleep {
+                    self.delay = sleep;
+                }
+                Ok(())
+            }
+            Command::Send(s) => self.handle_shader_command(s).await,
+        }
+    }
+
+    async fn handle_shader_command(
         &mut self,
         Send { shader, target }: Send,
     ) -> Result<(), Box<dyn Error>> {
@@ -218,29 +242,5 @@ impl Handler {
 
         francis.write(frame.buffer, 4).await?;
         Ok(())
-    }
-}
-
-async fn add_toy(
-    args: Args,
-    w: u32,
-    h: u32,
-    toys: &mut Vec<AnimScrot<Example>>,
-    options: &mut HashMap<String, usize>,
-    i: &mut usize,
-    names: &mut Vec<String>,
-    ctx: &Ctx,
-) {
-    names.push(args.name.clone());
-    let name = args.name.clone();
-    match scrot_new::<Example>(ctx, w, h, args).await {
-        Ok(scrot) => {
-            toys.push(scrot);
-            options.insert(name, *i);
-            *i += 1;
-        }
-        Err(_) => {
-            eprintln!("Couldn't create shadertoy shader {}", name);
-        }
     }
 }

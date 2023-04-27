@@ -84,13 +84,13 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
     println!("Got GPU Ctx");
 
     let input = match args.command {
-        Shader::Source { location } => shader_toy::Args::from_source(location.as_deref()).await?,
-        Shader::Local { api, location } => shader_toy::Args::from_local(&api, &location).await?,
+        Shader::Source { location } => shader_toy::Args::from_source(location).await?,
+        Shader::Local { api, location } => shader_toy::Args::from_local(&api, location).await?,
         Shader::Toy {
             api,
             shader_id,
             save,
-        } => shader_toy::Args::from_toy(&api, &shader_id, save).await?,
+        } => shader_toy::Args::from_toy(&api, shader_id, save).await?,
         Shader::Server {
             location,
             api,
