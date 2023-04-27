@@ -66,7 +66,7 @@ fn fuji_args() -> shader_toy::Args {
 
     shader_toy::Args {
         rps,
-        client: Client::new("".into()),
+        client: Client::new(""),
         name: "Splash".into(),
     }
 }
@@ -78,7 +78,7 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
 
     let input = match args.command {
         Shader::Source { location } => {
-            shader_toy::Args::from_source(location.as_ref().map(|x| x.as_str())).await?
+            shader_toy::Args::from_source(location.as_deref()).await?
         }
         Shader::Local { api, location } => shader_toy::Args::from_local(&api, &location).await?,
         Shader::Toy {

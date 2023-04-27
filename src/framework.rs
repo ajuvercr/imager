@@ -11,7 +11,7 @@ use winit::{
 };
 use x11_dl::xlib::Xlib;
 
-use crate::{Args, Event, Renderable, RenderableConfig, Spawner};
+use crate::{Args, Event, Renderable, RenderableConfig};
 
 pub struct Rend {
     id: u32,

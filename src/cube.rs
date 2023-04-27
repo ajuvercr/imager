@@ -3,7 +3,7 @@ use std::error::Error;
 use std::{borrow::Cow, f32::consts, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
-use crate::util::ErrorFuture;
+
 use crate::{Renderable, RenderableConfig};
 
 #[repr(C)]

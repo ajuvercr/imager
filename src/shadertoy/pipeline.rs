@@ -6,8 +6,7 @@ use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, RenderPipeline, Texture}
 
 use crate::{
     shadertoy::{Client, RenderPassInput},
-    util::ErrorFuture,
-    Renderable, RenderableConfig, Spawner,
+    Renderable, RenderableConfig,
 };
 
 use super::util::{InputType, FRAG_HEADER, FRAG_TAIL, VERTEX};

@@ -87,7 +87,7 @@ impl Handler {
             }
         }
 
-        let (tx, rx) = mpsc::channel(10);
+        let (_tx, rx) = mpsc::channel(10);
 
         Self {
             ctx,
