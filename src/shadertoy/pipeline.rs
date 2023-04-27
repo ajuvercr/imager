@@ -1,5 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, error::Error, io::Write, ops::Deref};
 
+use async_std::fs::read_to_string;
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, RenderPipeline, Texture};
 
@@ -492,6 +493,58 @@ pub struct Args {
     pub client: Client,
     pub name: String,
 }
+impl Args {
+    pub async fn from_source(loc: Option<&str>) -> Result<Self, Box<dyn Error>> {
+        let source = match &loc {
+            Some(name) => read_to_string(name).await?,
+            None => include_str!("../../shaders/cyber_fuji.glsl").to_string(),
+        };
+
+        let rps = vec![super::RenderPass {
+            inputs: vec![],
+            outputs: vec![],
+            code: source,
+            name: "Source Shader".into(),
+            description: "".into(),
+            pass_type: "image".into(),
+        }];
+
+        Ok(Args {
+            rps,
+            client: Client::new("".into()),
+            name: loc.unwrap_or("cyber_fuji").to_string(),
+        })
+    }
+    pub async fn from_local(api: &str, loc: &str) -> Result<Self, Box<dyn Error>> {
+        let st = read_to_string(loc).await?;
+        let shader: super::Shader = serde_json::from_str(&st)?;
+
+        let client = Client::new(&api);
+
+        Ok(Args {
+            rps: shader.renderpass,
+            client,
+            name: shader.info.name,
+        })
+    }
+
+    pub async fn from_toy(
+        api: &str,
+        shader_id: &str,
+        save: Option<String>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let client = Client::new(&api);
+        let shader = client
+            .get_shader(&shader_id, save.as_ref().map(|x| x.as_str()))
+            .await?;
+
+        Ok(Args {
+            rps: shader.renderpass,
+            client,
+            name: shader.info.name,
+        })
+    }
+}
 
 pub struct Example {
     vertex_buf: wgpu::Buffer,
@@ -591,7 +644,7 @@ impl RenderableConfig for Example {
         for (i, pass) in args
             .rps
             .into_iter()
-            .filter(|x| x.pass_type != "common")
+            .filter(|x| x.pass_type != "common" && x.pass_type != "sound")
             .rev()
             .enumerate()
         {
@@ -637,13 +690,7 @@ impl RenderableConfig for Example {
 }
 
 impl Renderable for Example {
-    fn update(
-        &mut self,
-        accum_time: f32,
-        _device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _spawner: &Spawner,
-    ) {
+    fn update(&mut self, accum_time: f32, _device: &wgpu::Device, queue: &wgpu::Queue) {
         let delta = accum_time - self.uniform.time;
         self.uniform.time_delta = delta;
         self.uniform.time = accum_time;
@@ -653,13 +700,7 @@ impl Renderable for Example {
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(mx_ref));
     }
 
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-    ) {
+    fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -703,11 +744,6 @@ impl Renderable for Example {
         }
 
         queue.submit(Some(encoder.finish()));
-
-        // If an error occurs, report it and panic.
-        spawner.spawn_local(ErrorFuture {
-            inner: device.pop_error_scope(),
-        });
     }
 }
 

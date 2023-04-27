@@ -4,7 +4,7 @@ use std::{borrow::Cow, f32::consts, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 use crate::util::ErrorFuture;
-use crate::{Renderable, RenderableConfig, Spawner};
+use crate::{Renderable, RenderableConfig};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -327,7 +327,6 @@ impl Renderable for Example {
         view: &wgpu::TextureView,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        spawner: &Spawner,
     ) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut encoder =
@@ -365,10 +364,5 @@ impl Renderable for Example {
         }
 
         queue.submit(Some(encoder.finish()));
-
-        // If an error occurs, report it and panic.
-        spawner.spawn_local(ErrorFuture {
-            inner: device.pop_error_scope(),
-        });
     }
 }

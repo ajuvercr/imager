@@ -1,11 +1,10 @@
-use std::{error::Error, fs::read_to_string, time::Instant};
+use std::{error::Error, time::Instant};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use imager::{
     francis::Francis,
     screenshot::{scrot_new, Ctx},
     shadertoy::{self as shader_toy, Client, RenderPass},
-    Spawner,
 };
 
 #[derive(Subcommand, Debug)]
@@ -77,67 +76,16 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
 
     println!("Got GPU Ctx");
 
-    let spawner = Spawner::new();
-
     let input = match args.command {
         Shader::Source { location } => {
-            let source = match &location {
-                Some(name) => std::fs::read_to_string(name)?,
-                None => include_str!("../../shaders/cyber_fuji.glsl").to_string(),
-            };
-
-            let rps = vec![RenderPass {
-                inputs: vec![],
-                outputs: vec![],
-                code: source,
-                name: "Source Shader".into(),
-                description: "".into(),
-                pass_type: "image".into(),
-            }];
-
-            shader_toy::Args {
-                rps,
-                client: Client::new("".into()),
-                name: location.unwrap_or("cyber_fuji".to_string()),
-            }
+            shader_toy::Args::from_source(location.as_ref().map(|x| x.as_str())).await?
         }
-        Shader::Local { api, location } => {
-            let st = read_to_string(location)?;
-            let shader: imager::shadertoy::Shader = serde_json::from_str(&st)?;
-            println!(
-                "Runnering shader toy shader {} by {}",
-                shader.info.name, shader.info.username
-            );
-
-            let client = Client::new(&api);
-
-            shader_toy::Args {
-                rps: shader.renderpass,
-                client,
-                name: shader.info.name,
-            }
-        }
+        Shader::Local { api, location } => shader_toy::Args::from_local(&api, &location).await?,
         Shader::Toy {
             api,
             shader_id,
             save,
-        } => {
-            let client = Client::new(&api);
-            let shader = client
-                .get_shader(&shader_id, save.as_ref().map(|x| x.as_str()))
-                .await?;
-
-            println!(
-                "Runnering shader toy shader {} by {}",
-                shader.info.name, shader.info.username
-            );
-
-            shader_toy::Args {
-                rps: shader.renderpass,
-                client,
-                name: shader.info.name,
-            }
-        }
+        } => shader_toy::Args::from_toy(&api, &shader_id, save).await?,
     };
 
     match args.mode {
@@ -170,19 +118,17 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
 
             let ctx = Ctx::new::<shader_toy::Example>().await;
 
-            let mut runner = scrot_new::<shader_toy::Example>(
-                ctx,
-                spawner,
-                francis.width(),
-                francis.height(),
-                input,
-            )
-            .await?;
+            let mut runner =
+                scrot_new::<shader_toy::Example>(&ctx, francis.width(), francis.height(), input)
+                    .await?;
+
             let start = Instant::now();
             let mut count = 0;
             let mut fps = Instant::now();
             loop {
-                let frame = runner.frame(start.elapsed().as_secs_f32()).await;
+                let frame = runner
+                    .frame(&ctx, start.elapsed().as_secs_f32(), None)
+                    .await;
                 francis.write(frame.buffer, 4).await.unwrap();
 
                 count += 1;
@@ -195,6 +141,7 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
         }
     }
 }
+
 
 #[tokio::main]
 async fn main() {

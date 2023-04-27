@@ -107,21 +107,9 @@ pub trait RenderableConfig: 'static + Sized {
 }
 
 pub trait Renderable: 'static {
-    fn update(
-        &mut self,
-        accum_time: f32,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-    ) {
-        let _ = (accum_time, device, queue, spawner);
+    fn update(&mut self, accum_time: f32, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let _ = (accum_time, device, queue);
     }
 
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-    );
+    fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue);
 }

@@ -156,9 +156,7 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
 
     let (size, surface) = unsafe {
         let size = window.inner_size();
-
         let surface = instance.create_surface(&window).unwrap();
-
         (size, surface)
     };
 
@@ -217,7 +215,6 @@ pub async fn screen<E: Renderable + RenderableConfig>(
     }: &Setup,
     input: E::Input,
 ) {
-    let spawner = Spawner::new();
     let config = surface
         .get_default_config(&adapter, size.width, size.height)
         .expect("Surface isn't supported by the adapter.");
@@ -242,7 +239,7 @@ pub async fn screen<E: Renderable + RenderableConfig>(
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
 
-    example.render(&view, &device, &queue, &spawner);
+    example.render(&view, &device, &queue);
 
     frame.present();
 }
@@ -261,11 +258,12 @@ pub async fn start<E: Renderable + RenderableConfig>(
     args: Args,
     input: E::Input,
 ) {
-    let spawner = Spawner::new();
     let mut config = surface
         .get_default_config(&adapter, size.width, size.height)
         .expect("Surface isn't supported by the adapter.");
+
     surface.configure(&device, &config);
+
 
     log::info!("Initializing the example...");
     let mut example = E::init(&config, &adapter, &device, &queue, input)
@@ -286,7 +284,6 @@ pub async fn start<E: Renderable + RenderableConfig>(
         };
         match event {
             event::Event::RedrawEventsCleared => {
-                spawner.run_until_stalled();
                 window.request_redraw();
             }
             event::Event::WindowEvent {
@@ -346,7 +343,7 @@ pub async fn start<E: Renderable + RenderableConfig>(
                 }
 
                 if !args.single {
-                    example.update(elapsed, &device, &queue, &spawner);
+                    example.update(elapsed, &device, &queue);
                 }
 
                 let frame = match surface.get_current_texture() {
@@ -363,7 +360,7 @@ pub async fn start<E: Renderable + RenderableConfig>(
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                example.render(&view, &device, &queue, &spawner);
+                example.render(&view, &device, &queue);
 
                 frame.present();
 

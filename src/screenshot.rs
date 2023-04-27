@@ -1,8 +1,8 @@
-use std::{error::Error, num::NonZeroU32};
+use std::{collections::HashMap, error::Error, num::NonZeroU32};
 
-use wgpu::{Buffer, Texture, TextureView};
+use wgpu::{Buffer, Texture};
 
-use crate::{Renderable, RenderableConfig, Spawner};
+use crate::{Renderable, RenderableConfig};
 
 pub struct Ctx {
     adapter: wgpu::Adapter,
@@ -55,15 +55,49 @@ impl Ctx {
     }
 }
 
-pub struct AnimScrot<'a, E> {
-    ctx: Ctx,
+#[derive(Default, Debug)]
+struct TextureProvider {
+    textures: HashMap<(u32, u32), (Texture, Buffer)>,
+}
+
+impl TextureProvider {
+    fn get_texture(&mut self, size: (u32, u32), ctx: &Ctx) -> (&Texture, &Buffer) {
+        if !self.textures.contains_key(&size) {
+            let dst_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("destination"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+
+            let dst_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("image map buffer"),
+                size: size.0 as u64 * size.1 as u64 * 4,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+
+            self.textures.insert(size, (dst_texture, dst_buffer));
+        }
+
+        let (ref tex, ref buf) = &self.textures[&size];
+        (tex, buf)
+    }
+}
+
+pub struct AnimScrot<E> {
     width: u32,
     height: u32,
     example: E,
-    dst_view: TextureView,
-    dst_buffer: Buffer,
-    dst_texture: Texture,
-    spawner: Spawner<'a>,
+    texture_provider: TextureProvider,
 }
 
 #[derive(Clone)]
@@ -74,36 +108,11 @@ pub struct Frame {
 }
 
 pub async fn scrot_new<'a, E: Renderable + RenderableConfig>(
-    ctx: Ctx,
-    spawner: Spawner<'a>,
+    ctx: &Ctx,
     width: u32,
     height: u32,
     input: E::Input,
 ) -> Result<AnimScrot<E>, Box<dyn Error>> {
-    let dst_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("destination"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-
-    let dst_view = dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let dst_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("image map buffer"),
-        size: width as u64 * height as u64 * 4,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-
     let example = E::init(
         &wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -121,44 +130,40 @@ pub async fn scrot_new<'a, E: Renderable + RenderableConfig>(
     )
     .await?;
 
+    let texture_provider = TextureProvider::default();
+
     Ok(AnimScrot {
-        ctx,
         width,
         height,
-        spawner,
         example,
-        dst_view,
-        dst_buffer,
-        dst_texture,
+        texture_provider,
     })
 }
 
-impl<'a, E: Renderable> AnimScrot<'a, E> {
-    pub async fn frame(&mut self, time: f32) -> Frame {
-        self.example
-            .update(time, &self.ctx.device, &self.ctx.queue, &self.spawner);
+impl<E: Renderable> AnimScrot<E> {
+    pub async fn frame(&mut self, ctx: &Ctx, time: f32, size: Option<(u32, u32)>) -> Frame {
+        self.example.update(time, &ctx.device, &ctx.queue);
 
-        self.example.render(
-            &self.dst_view,
-            &self.ctx.device,
-            &self.ctx.queue,
-            &self.spawner,
-        );
+        let (tex, buf) = self
+            .texture_provider
+            .get_texture(size.unwrap_or((self.width, self.height)), ctx);
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut cmd_buf = self
-            .ctx
+        self.example.render(&view, &ctx.device, &ctx.queue);
+
+        let mut cmd_buf = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         cmd_buf.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
-                texture: &self.dst_texture,
+                texture: tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::ImageCopyBuffer {
-                buffer: &self.dst_buffer,
+                buffer: buf,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(NonZeroU32::new(self.width * 4).unwrap()),
@@ -172,13 +177,13 @@ impl<'a, E: Renderable> AnimScrot<'a, E> {
             },
         );
 
-        self.ctx.queue.submit(Some(cmd_buf.finish()));
+        ctx.queue.submit(Some(cmd_buf.finish()));
 
-        let dst_buffer_slice = self.dst_buffer.slice(..);
+        let dst_buffer_slice = buf.slice(..);
         dst_buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
-        self.ctx.device.poll(wgpu::Maintain::Wait);
+        ctx.device.poll(wgpu::Maintain::Wait);
         let buffer = dst_buffer_slice.get_mapped_range().to_vec();
-        self.dst_buffer.unmap();
+        buf.unmap();
 
         Frame {
             width: self.width as u32,
