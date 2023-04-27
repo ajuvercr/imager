@@ -1,8 +1,9 @@
 use std::{error::Error, time::Instant};
 
+use async_std::fs::read_to_string;
 use clap::{Parser, Subcommand, ValueEnum};
 use imager::{
-    francis::Francis,
+    francis::{self as francis, Francis, Handler},
     screenshot::{scrot_new, Ctx},
     shadertoy::{self as shader_toy, Client, RenderPass},
 };
@@ -21,10 +22,16 @@ enum Shader {
 
         shader_id: String,
     },
-
     Local {
         #[arg(short, long)]
         api: String,
+        location: String,
+    },
+    Server {
+        #[arg(short, long)]
+        api: String,
+        #[arg(short, long)]
+        port: u16,
         location: String,
     },
 }
@@ -77,15 +84,26 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
     println!("Got GPU Ctx");
 
     let input = match args.command {
-        Shader::Source { location } => {
-            shader_toy::Args::from_source(location.as_deref()).await?
-        }
+        Shader::Source { location } => shader_toy::Args::from_source(location.as_deref()).await?,
         Shader::Local { api, location } => shader_toy::Args::from_local(&api, &location).await?,
         Shader::Toy {
             api,
             shader_id,
             save,
         } => shader_toy::Args::from_toy(&api, &shader_id, save).await?,
+        Shader::Server {
+            location,
+            api,
+            port,
+        } => {
+            let config = read_to_string(location).await?;
+            let config: francis::Options = serde_json::from_str(&config)?;
+
+            let handler = Handler::new(&api, config, port).await;
+            handler.start().await?;
+
+            return Ok(());
+        }
     };
 
     match args.mode {
@@ -141,7 +159,6 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
         }
     }
 }
-
 
 #[tokio::main]
 async fn main() {

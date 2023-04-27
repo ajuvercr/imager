@@ -73,7 +73,7 @@ impl TextureProvider {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Bgra8Unorm,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
@@ -116,12 +116,15 @@ pub async fn scrot_new<'a, E: Renderable + RenderableConfig>(
     let example = E::init(
         &wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Bgra8Unorm,
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![wgpu::TextureFormat::Rgba8UnormSrgb],
+            view_formats: vec![
+                wgpu::TextureFormat::Bgra8Unorm,
+                wgpu::TextureFormat::Bgra8UnormSrgb,
+            ],
         },
         &ctx.adapter,
         &ctx.device,
@@ -142,11 +145,10 @@ pub async fn scrot_new<'a, E: Renderable + RenderableConfig>(
 
 impl<E: Renderable> AnimScrot<E> {
     pub async fn frame(&mut self, ctx: &Ctx, time: f32, size: Option<(u32, u32)>) -> Frame {
-        self.example.update(time, &ctx.device, &ctx.queue);
+        let size = size.unwrap_or((self.width, self.height));
+        self.example.update(time, size, &ctx.device, &ctx.queue);
 
-        let (tex, buf) = self
-            .texture_provider
-            .get_texture(size.unwrap_or((self.width, self.height)), ctx);
+        let (tex, buf) = self.texture_provider.get_texture(size, ctx);
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.example.render(&view, &ctx.device, &ctx.queue);
@@ -166,13 +168,13 @@ impl<E: Renderable> AnimScrot<E> {
                 buffer: buf,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some(NonZeroU32::new(self.width * 4).unwrap()),
+                    bytes_per_row: Some(NonZeroU32::new(size.0 * 4).unwrap()),
                     rows_per_image: None,
                 },
             },
             wgpu::Extent3d {
-                width: self.width as u32,
-                height: self.height as u32,
+                width: size.0 as u32,
+                height: size.1 as u32,
                 depth_or_array_layers: 1,
             },
         );
@@ -186,8 +188,8 @@ impl<E: Renderable> AnimScrot<E> {
         buf.unmap();
 
         Frame {
-            width: self.width as u32,
-            height: self.height as u32,
+            width: size.0 as u32,
+            height: size.1 as u32,
             buffer,
         }
     }

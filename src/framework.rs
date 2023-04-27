@@ -58,7 +58,7 @@ impl Renders {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -67,12 +67,12 @@ impl Renders {
             E::init(
                 &wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     width: args.width,
                     height: args.height,
                     present_mode: wgpu::PresentMode::Fifo,
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                    view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
+                    view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
                 },
                 &self.adapter,
                 &self.device,
@@ -264,7 +264,6 @@ pub async fn start<E: Renderable + RenderableConfig>(
 
     surface.configure(&device, &config);
 
-
     log::info!("Initializing the example...");
     let mut example = E::init(&config, &adapter, &device, &queue, input)
         .await
@@ -343,7 +342,7 @@ pub async fn start<E: Renderable + RenderableConfig>(
                 }
 
                 if !args.single {
-                    example.update(elapsed, &device, &queue);
+                    example.update(elapsed, (config.width, config.height), &device, &queue);
                 }
 
                 let frame = match surface.get_current_texture() {

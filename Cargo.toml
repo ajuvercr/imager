@@ -30,4 +30,6 @@ image = "0.24.6"
 shellwords = "1.1.0"
 futures-channel = "0.3.28"
 nanorand = "0.7.0"
+hyper = { version = "0.14.26", features = ["server", "stream", "http1", "http2"] }
+rayon = "1.7.0"
 

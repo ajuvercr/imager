@@ -87,26 +87,6 @@ impl Client {
         }
     }
 
-    /// Issues a search query for shadertoys.
-    /// If the query is successful a list of shader ids will be returned,
-    /// which can be used with `get_shader`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # fn main() {
-    /// let client = shadertoy::Client::new("Bd8tWD"); // insert your own API key here
-    /// let search_params = shadertoy::SearchParams {
-    /// 	string: "car",
-    ///     sort_order: shadertoy::SearchSortOrder::Love,
-    ///     filters: vec![],
-    /// };
-    /// match client.search(&search_params) {
-    /// 	Ok(shader_ids) => println!("\"Car\" shadertoys: {:?}", shader_ids),
-    /// 	Err(err) => println!("Search failed: {}", err),
-    /// }
-    /// # }
-    /// ```
     pub async fn search(&self, params: &SearchParams<'_>) -> Result<Vec<String>> {
         let query_str = format!(
             "https://www.shadertoy.com/api/v1/shaders{}?sort={}&{}key={}",
@@ -199,21 +179,38 @@ impl Client {
     }
 
     pub async fn get_resource(&self, resource: &str) -> Result<Vec<u8>> {
-        let data = self
-            .rest_client
-            .get(&format!(
-                "https://www.shadertoy.com/{}?key={}",
-                resource, self.api_key
-            ))
-            .send()
-            .await?
-            .bytes()
-            .await?;
+        let local = format!("cache{}", resource);
 
-        Ok(data.to_vec())
+        if let Ok(x) = async_std::fs::read(&local).await {
+            println!("Got resource from cache");
+            Ok(x)
+        } else {
+            let data = self
+                .rest_client
+                .get(&format!(
+                    "https://www.shadertoy.com/{}?key={}",
+                    resource, self.api_key
+                ))
+                .send()
+                .await?
+                .bytes()
+                .await?;
+
+            let bytes = data.to_vec();
+
+            if let Err(e) = async_std::fs::write(local, &bytes).await {
+                println!("Could not cache file {:?}", e);
+            }
+
+            Ok(bytes)
+        }
     }
 
-    pub async fn get_png(&self, resource: &str, input_type: InputType) -> Result<(Vec<u8>, (u32, u32))> {
+    pub async fn get_png(
+        &self,
+        resource: &str,
+        input_type: InputType,
+    ) -> Result<(Vec<u8>, (u32, u32))> {
         use image::io::Reader as ImageReader;
 
         let bytes = self.get_resource(resource).await?;
@@ -239,10 +236,15 @@ impl Client {
 
                 raw.extend_from_slice(&img2.into_rgba8().as_raw());
             }
-
-            Ok((raw, size))
-        } else {
-            Ok((raw, size))
         }
+        rgba_to_bgra(&mut raw);
+        Ok((raw, size))
+    }
+}
+fn rgba_to_bgra(vec: &mut Vec<u8>) {
+    for i in (0..vec.len()).step_by(4) {
+        let tmp = vec[i];
+        vec[i] = vec[i + 2];
+        vec[i + 2] = tmp;
     }
 }

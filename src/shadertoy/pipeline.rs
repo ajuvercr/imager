@@ -142,10 +142,10 @@ fn to_wgsl(source: &str, stage: naga::ShaderStage, name: &str, index: usize) -> 
     } else {
         "frag"
     };
-    let file = format!("./tmp/{}_{}_{}.wgsl", name, n, index);
-    let mut f = std::fs::File::create(file).unwrap();
+    // let file = format!("./tmp/{}_{}_{}.wgsl", name, n, index);
+    // let mut f = std::fs::File::create(file).unwrap();
     let source = writer.finish();
-    f.write_all(source.as_bytes()).unwrap();
+    // f.write_all(source.as_bytes()).unwrap();
 
     source
 }
@@ -200,9 +200,9 @@ impl<'a> PipelineBuilder<'a> {
             FRAG_TAIL
         );
 
-        let mut file =
-            std::fs::File::create(format!("tmp/{}_source_{}.glsl", self.name, self.index)).unwrap();
-        file.write_all(source.as_bytes()).unwrap();
+        // let mut file =
+        //     std::fs::File::create(format!("tmp/{}_source_{}.glsl", self.name, self.index)).unwrap();
+        // file.write_all(source.as_bytes()).unwrap();
 
         let frag_shader = self
             .device
@@ -289,7 +289,7 @@ impl<'a> PipelineBuilder<'a> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Bgra8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -344,7 +344,7 @@ impl<'a> PipelineBuilder<'a> {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                format: wgpu::TextureFormat::Bgra8Unorm,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
@@ -390,9 +390,9 @@ impl<'a> PipelineBuilder<'a> {
         };
 
         let format = if input.sampler.srgb == "true" {
-            wgpu::TextureFormat::Rgba8UnormSrgb
+            wgpu::TextureFormat::Bgra8UnormSrgb
         } else {
-            wgpu::TextureFormat::Rgba8Unorm
+            wgpu::TextureFormat::Bgra8Unorm
         };
 
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -689,11 +689,18 @@ impl RenderableConfig for Example {
 }
 
 impl Renderable for Example {
-    fn update(&mut self, accum_time: f32, _device: &wgpu::Device, queue: &wgpu::Queue) {
+    fn update(
+        &mut self,
+        accum_time: f32,
+        size: (u32, u32),
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
         let delta = accum_time - self.uniform.time;
         self.uniform.time_delta = delta;
         self.uniform.time = accum_time;
         self.uniform.frame += 1;
+        self.uniform.resolution = [size.0 as f32, size.1 as f32, 0., 0.];
 
         let mx_ref: &[Uniform; 1] = &[self.uniform];
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(mx_ref));

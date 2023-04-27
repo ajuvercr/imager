@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::Duration;
 use std::time::Instant;
 
+use async_std::task::sleep;
 use futures_channel::mpsc;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,7 @@ use crate::screenshot::Ctx;
 use crate::shadertoy::Args;
 use crate::shadertoy::Example;
 
+use super::server::start_server;
 use super::Francis;
 use nanorand::{Rng, WyRand};
 
@@ -48,15 +51,24 @@ pub struct Handler {
     start: Instant,
     ctx: Ctx,
 
+    names: Vec<String>,
     options: HashMap<String, usize>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Info {
+    screens: Vec<(u32, u32)>,
+    toys: Vec<String>,
+}
+
+use rayon::prelude::*;
 impl Handler {
-    pub async fn new(api: &str, input: Options) -> Handler {
+    pub async fn new(api: &str, input: Options, port: u16) -> Handler {
         let rand = WyRand::new();
         let main = Francis::new(&input.francis, None, None).await.unwrap();
         let (w, h) = (main.width(), main.height());
         let mut clients = vec![main];
+
 
         for fr in &input.small_francis {
             let francis = Francis::new(fr, None, None).await.unwrap();
@@ -68,26 +80,65 @@ impl Handler {
         let mut options = HashMap::new();
 
         let mut toys = Vec::new();
+        let mut names = Vec::new();
 
         for local in &input.local {
             if let Ok(args) = Args::from_local(api, &local).await {
-                add_toy(args, w, h, &mut toys, &mut options, &mut i, &ctx).await;
+                add_toy(
+                    args,
+                    w,
+                    h,
+                    &mut toys,
+                    &mut options,
+                    &mut i,
+                    &mut names,
+                    &ctx,
+                )
+                .await;
             }
         }
 
         for toy in &input.toy {
             if let Ok(args) = Args::from_toy(api, &toy, None).await {
-                add_toy(args, w, h, &mut toys, &mut options, &mut i, &ctx).await;
+                add_toy(
+                    args,
+                    w,
+                    h,
+                    &mut toys,
+                    &mut options,
+                    &mut i,
+                    &mut names,
+                    &ctx,
+                )
+                .await;
             }
         }
 
         for source in &input.source {
             if let Ok(args) = Args::from_source(Some(source)).await {
-                add_toy(args, w, h, &mut toys, &mut options, &mut i, &ctx).await;
+                add_toy(
+                    args,
+                    w,
+                    h,
+                    &mut toys,
+                    &mut options,
+                    &mut i,
+                    &mut names,
+                    &ctx,
+                )
+                .await;
             }
         }
 
-        let (_tx, rx) = mpsc::channel(10);
+        let info = Info {
+            screens: clients.iter().map(|x| (x.width(), x.height())).collect(),
+            toys: options.keys().cloned().collect(),
+        };
+        let info = serde_json::to_string_pretty(&info).unwrap();
+
+        let (tx, rx) = mpsc::channel(10);
+
+        tokio::spawn(start_server(port, tx, info));
 
         Self {
             ctx,
@@ -96,6 +147,7 @@ impl Handler {
             options,
             clients,
             rand,
+            names,
             commands: rx,
         }
     }
@@ -110,16 +162,18 @@ impl Handler {
                 Ok(Some(Command::Send(send))) => {
                     self.handle_command(send).await?;
                 }
-                Ok(None) => {}
-                Err(e) => return Err(e.into()),
+                Ok(None) => return Ok(()),
+                Err(_) => {}
             }
 
             let francis = {
                 let idx = self.rand.generate_range(0usize..self.clients.len());
+                print!("Using francis {}", idx);
                 &mut self.clients[idx]
             };
             let toy = {
                 let idx = self.rand.generate_range(0usize..self.toys.len());
+                println!("for shader {}", self.names[idx]);
                 &mut self.toys[idx]
             };
             let x = toy
@@ -130,6 +184,8 @@ impl Handler {
                 )
                 .await;
             francis.write(x.buffer, 4).await?;
+
+            sleep(Duration::from_millis(200)).await;
         }
     }
 
@@ -172,8 +228,10 @@ async fn add_toy(
     toys: &mut Vec<AnimScrot<Example>>,
     options: &mut HashMap<String, usize>,
     i: &mut usize,
+    names: &mut Vec<String>,
     ctx: &Ctx,
 ) {
+    names.push(args.name.clone());
     let name = args.name.clone();
     match scrot_new::<Example>(ctx, w, h, args).await {
         Ok(scrot) => {

@@ -70,9 +70,9 @@ impl Francis {
             for y in 0..self.height {
                 let index = (y as usize * self.width as usize + x as usize) * bytes_per_pixel;
 
-                let r = buf[index + 0];
+                let b = buf[index + 0];
                 let g = buf[index + 1];
-                let b = buf[index + 2];
+                let r = buf[index + 2];
 
                 if let Some(old) = &self.buffer {
                     let or = old[index + 0];
@@ -100,6 +100,7 @@ impl Francis {
         }
 
         self.stream.write_all(cursor.get_ref()).await?;
+        self.stream.flush().await?;
         cursor.set_position(0);
 
         self.buffer = Some(buf);
