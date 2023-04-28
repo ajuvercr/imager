@@ -1,13 +1,6 @@
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{
-    io::{stdout, BufWriter, Write},
-    num::NonZeroU32,
-    sync::mpsc,
-    thread::sleep,
-    time::Duration,
-};
+use std::{sync::mpsc, thread::sleep, time::Duration};
 use wgpu::Texture;
 
 use winit::{
@@ -18,7 +11,7 @@ use winit::{
 };
 use x11_dl::xlib::Xlib;
 
-use crate::{Args, Event, Renderable, RenderableConfig, Spawner};
+use crate::{Args, Event, Renderable, RenderableConfig};
 
 pub struct Rend {
     id: u32,
@@ -47,7 +40,11 @@ pub struct Renders {
 }
 
 impl Renders {
-    pub fn create<E: RenderableConfig + Renderable>(&mut self, args: Args) -> u32 {
+    pub async fn create<I, E: RenderableConfig<Input = I> + Renderable>(
+        &mut self,
+        args: Args,
+        input: I,
+    ) -> u32 {
         let id = self.created;
         self.created += 1;
 
@@ -61,27 +58,36 @@ impl Renders {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
-        let renderable = Box::new(E::init(
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                width: args.width,
-                height: args.height,
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![wgpu::TextureFormat::Rgba8Unorm],
-            },
-            &self.adapter,
-            &self.device,
-            &self.queue,
-        ));
+        let renderable = Box::new(
+            E::init(
+                &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    width: args.width,
+                    height: args.height,
+                    present_mode: wgpu::PresentMode::Fifo,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+                },
+                &self.adapter,
+                &self.device,
+                &self.queue,
+                input,
+            )
+            .await
+            .unwrap(),
+        );
 
-        self.renderables.push(Rend { texture, renderable, id});
+        self.renderables.push(Rend {
+            texture,
+            renderable,
+            id,
+        });
 
         id
     }
@@ -118,22 +124,24 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
             x: args.x_pos,
             y: args.y_pos,
         })
-        .with_override_redirect(true);
+        .with_override_redirect(args.display.needs_override());
 
     let window = builder.build(&event_loop).unwrap();
 
-    let display_id = match window.raw_display_handle() {
-        raw_window_handle::RawDisplayHandle::Xlib(handle) => handle.display,
-        _ => panic!(),
-    };
+    if args.display.is_desktop() {
+        let display_id = match window.raw_display_handle() {
+            raw_window_handle::RawDisplayHandle::Xlib(handle) => handle.display,
+            _ => panic!(),
+        };
 
-    let window_id = match window.raw_window_handle() {
-        raw_window_handle::RawWindowHandle::Xlib(handle) => handle.window,
-        _ => panic!(),
-    };
+        let window_id = match window.raw_window_handle() {
+            raw_window_handle::RawWindowHandle::Xlib(handle) => handle.window,
+            _ => panic!(),
+        };
 
-    unsafe {
-        (xlib.XLowerWindow)(display_id.cast(), window_id);
+        unsafe {
+            (xlib.XLowerWindow)(display_id.cast(), window_id);
+        }
     }
 
     log::info!("Initializing the surface...");
@@ -148,16 +156,14 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
 
     let (size, surface) = unsafe {
         let size = window.inner_size();
-
         let surface = instance.create_surface(&window).unwrap();
-
         (size, surface)
     };
 
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(&surface),
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
             force_fallback_adapter: false,
         })
         .await
@@ -198,7 +204,47 @@ pub async fn setup<E: RenderableConfig>(args: &Args) -> Setup {
     }
 }
 
-pub fn start<E: Renderable + RenderableConfig>(
+pub async fn screen<E: Renderable + RenderableConfig>(
+    Setup {
+        ref size,
+        ref surface,
+        ref adapter,
+        ref device,
+        ref queue,
+        ..
+    }: &Setup,
+    input: E::Input,
+) {
+    let config = surface
+        .get_default_config(&adapter, size.width, size.height)
+        .expect("Surface isn't supported by the adapter.");
+    surface.configure(&device, &config);
+
+    log::info!("Initializing the example...");
+    let mut example = E::init(&config, &adapter, &device, &queue, input)
+        .await
+        .unwrap();
+
+    let frame = match surface.get_current_texture() {
+        Ok(frame) => frame,
+        Err(_) => {
+            surface.configure(&device, &config);
+            surface
+                .get_current_texture()
+                .expect("Failed to acquire next surface texture!")
+        }
+    };
+
+    let view = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+    example.render(&view, &device, &queue);
+
+    frame.present();
+}
+
+pub async fn start<E: Renderable + RenderableConfig>(
     Setup {
         window,
         event_loop,
@@ -210,15 +256,18 @@ pub fn start<E: Renderable + RenderableConfig>(
         queue,
     }: Setup,
     args: Args,
+    input: E::Input,
 ) {
-    let spawner = Spawner::new();
     let mut config = surface
         .get_default_config(&adapter, size.width, size.height)
         .expect("Surface isn't supported by the adapter.");
+
     surface.configure(&device, &config);
 
     log::info!("Initializing the example...");
-    let mut example = E::init(&config, &adapter, &device, &queue);
+    let mut example = E::init(&config, &adapter, &device, &queue, input)
+        .await
+        .unwrap();
 
     let start = Instant::now();
     let mut last_frame_inst = Instant::now();
@@ -234,7 +283,6 @@ pub fn start<E: Renderable + RenderableConfig>(
         };
         match event {
             event::Event::RedrawEventsCleared => {
-                spawner.run_until_stalled();
                 window.request_redraw();
             }
             event::Event::WindowEvent {
@@ -294,7 +342,7 @@ pub fn start<E: Renderable + RenderableConfig>(
                 }
 
                 if !args.single {
-                    example.update(elapsed, &device, &queue, &spawner);
+                    example.update(elapsed, (config.width, config.height), &device, &queue);
                 }
 
                 let frame = match surface.get_current_texture() {
@@ -311,7 +359,7 @@ pub fn start<E: Renderable + RenderableConfig>(
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                example.render(&view, &device, &queue, &spawner);
+                example.render(&view, &device, &queue);
 
                 frame.present();
 

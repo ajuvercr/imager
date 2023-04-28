@@ -1,0 +1,200 @@
+{
+  "ver": "0.1",
+  "info": {
+    "id": "ldK3RW",
+    "date": "1453544958",
+    "viewed": 35719,
+    "name": "Diffusion-limited aggregation",
+    "username": "davidar",
+    "description": "[url]https://en.wikipedia.org/wiki/Diffusion-limited_aggregation[/url]\n[url]http://paulbourke.net/fractals/dla/[/url]\n\nClick to reinitialise.",
+    "likes": 63,
+    "published": 3,
+    "flags": 32,
+    "tags": [
+      "2d",
+      "diffusion",
+      "branching"
+    ],
+    "hasliked": 0,
+    "usePreview": 0
+  },
+  "renderpass": [
+    {
+      "inputs": [
+        {
+          "id": 257,
+          "src": "/media/previz/buffer00.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 258,
+          "src": "/media/previz/buffer01.png",
+          "ctype": "buffer",
+          "channel": 1,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 259,
+          "src": "/media/previz/buffer02.png",
+          "ctype": "buffer",
+          "channel": 2,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        },
+        {
+          "id": 260,
+          "src": "/media/previz/buffer03.png",
+          "ctype": "buffer",
+          "channel": 3,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [],
+      "code": "// 2016 David A Roberts <https://davidar.io>\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n\tvec2 uv = fragCoord.xy / iResolution.xy;\n\tfragColor = (texture(iChannel0,uv) + texture(iChannel1,uv) + texture(iChannel2,uv) + texture(iChannel3,uv)) / 5.;\n}",
+      "name": "Image",
+      "description": "",
+      "type": "image"
+    },
+    {
+      "inputs": [
+        {
+          "id": 260,
+          "src": "/media/previz/buffer03.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 257,
+          "channel": 0
+        }
+      ],
+      "code": "// 2016 David A Roberts <https://davidar.io>\n\n// 1 out, 3 in... <https://www.shadertoy.com/view/4djSRW>\n#define MOD3 vec3(.1031,.11369,.13787)\nfloat hash13(vec3 p3) {\n\tp3 = fract(p3 * MOD3);\n    p3 += dot(p3, p3.yzx+19.19);\n    return fract((p3.x + p3.y)*p3.z);\n}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord ) {\n    fragColor = vec4(0,0,0,1);\n    if(iFrame < 10 || iMouse.z > 0.) {\n        if(length(fragCoord-10.) < 2.)\n            fragColor.y = 1.;\n        //else if(hash13(vec3(fragCoord,iFrame)) < 0.05)\n        //    fragColor.x = 1.;\n        return;\n    }\n    \n    if(fragCoord.x < 1. || fragCoord.x > iResolution.x-1. ||\n       fragCoord.y < 1. || fragCoord.y > iResolution.y-1.) {\n        fragColor.x = 1.;\n        return;\n    }\n    \n    vec4 c  = texture(iChannel0, (fragCoord + vec2( 0, 0)) / iResolution.xy);\n    vec4 n  = texture(iChannel0, (fragCoord + vec2( 0, 1)) / iResolution.xy);\n    vec4 ne = texture(iChannel0, (fragCoord + vec2( 1, 1)) / iResolution.xy);\n    vec4 e  = texture(iChannel0, (fragCoord + vec2( 1, 0)) / iResolution.xy);\n    vec4 se = texture(iChannel0, (fragCoord + vec2( 1,-1)) / iResolution.xy);\n    vec4 s  = texture(iChannel0, (fragCoord + vec2( 0,-1)) / iResolution.xy);\n    vec4 sw = texture(iChannel0, (fragCoord + vec2(-1,-1)) / iResolution.xy);\n    vec4 w  = texture(iChannel0, (fragCoord + vec2(-1, 0)) / iResolution.xy);\n    vec4 nw = texture(iChannel0, (fragCoord + vec2(-1, 1)) / iResolution.xy);\n    \n    // aggregation\n    fragColor.y = clamp(\n        c.y + c.x * (n.y + ne.y + e.y + se.y + s.y + sw.y + w.y + nw.y), 0., 1.);\n    \n    bool nc = int(4.*hash13(vec3(fragCoord + vec2( 0, 1), iFrame))) == 0;\n    bool ec = int(4.*hash13(vec3(fragCoord + vec2( 1, 0), iFrame))) == 1;\n    bool sc = int(4.*hash13(vec3(fragCoord + vec2( 0,-1), iFrame))) == 2;\n    bool wc = int(4.*hash13(vec3(fragCoord + vec2(-1, 0), iFrame))) == 3;\n    \n    // diffusion\n    fragColor.x = clamp(\n    \tn.x * float(nc) + e.x * float(ec) + s.x * float(sc) + w.x * float(wc) +\n    \tfloor((1. + (n.x + e.x + s.x + w.x)/100.) * hash13(vec3(fragCoord,iFrame))), 0., 1.);\n    \n    fragColor.x *= 1. - fragColor.y;\n}",
+      "name": "Buf A",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": 257,
+          "src": "/media/previz/buffer00.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 258,
+          "channel": 0
+        }
+      ],
+      "code": "// 2016 David A Roberts <https://davidar.io>\n\n// 1 out, 3 in... <https://www.shadertoy.com/view/4djSRW>\n#define MOD3 vec3(.1031,.11369,.13787)\nfloat hash13(vec3 p3) {\n\tp3 = fract(p3 * MOD3);\n    p3 += dot(p3, p3.yzx+19.19);\n    return fract((p3.x + p3.y)*p3.z);\n}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord ) {\n    fragColor = vec4(0,0,0,1);\n    if(iFrame < 10 || iMouse.z > 0.) {\n        if(length(fragCoord-10.) < 2.)\n            fragColor.y = 1.;\n        //else if(hash13(vec3(fragCoord,iFrame)) < 0.05)\n        //    fragColor.x = 1.;\n        return;\n    }\n    \n    if(fragCoord.x < 1. || fragCoord.x > iResolution.x-1. ||\n       fragCoord.y < 1. || fragCoord.y > iResolution.y-1.) {\n        fragColor.x = 1.;\n        return;\n    }\n    \n    vec4 c  = texture(iChannel0, (fragCoord + vec2( 0, 0)) / iResolution.xy);\n    vec4 n  = texture(iChannel0, (fragCoord + vec2( 0, 1)) / iResolution.xy);\n    vec4 ne = texture(iChannel0, (fragCoord + vec2( 1, 1)) / iResolution.xy);\n    vec4 e  = texture(iChannel0, (fragCoord + vec2( 1, 0)) / iResolution.xy);\n    vec4 se = texture(iChannel0, (fragCoord + vec2( 1,-1)) / iResolution.xy);\n    vec4 s  = texture(iChannel0, (fragCoord + vec2( 0,-1)) / iResolution.xy);\n    vec4 sw = texture(iChannel0, (fragCoord + vec2(-1,-1)) / iResolution.xy);\n    vec4 w  = texture(iChannel0, (fragCoord + vec2(-1, 0)) / iResolution.xy);\n    vec4 nw = texture(iChannel0, (fragCoord + vec2(-1, 1)) / iResolution.xy);\n    \n    // aggregation\n    fragColor.y = clamp(\n        c.y + c.x * (n.y + ne.y + e.y + se.y + s.y + sw.y + w.y + nw.y), 0., 1.);\n    \n    bool nc = int(4.*hash13(vec3(fragCoord + vec2( 0, 1), iFrame))) == 0;\n    bool ec = int(4.*hash13(vec3(fragCoord + vec2( 1, 0), iFrame))) == 1;\n    bool sc = int(4.*hash13(vec3(fragCoord + vec2( 0,-1), iFrame))) == 2;\n    bool wc = int(4.*hash13(vec3(fragCoord + vec2(-1, 0), iFrame))) == 3;\n    \n    // diffusion\n    fragColor.x = clamp(\n    \tn.x * float(nc) + e.x * float(ec) + s.x * float(sc) + w.x * float(wc) +\n    \tfloor((1. + (n.x + e.x + s.x + w.x)/100.) * hash13(vec3(fragCoord,iFrame))), 0., 1.);\n    \n    fragColor.x *= 1. - fragColor.y;\n}",
+      "name": "Buf B",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": 258,
+          "src": "/media/previz/buffer01.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 259,
+          "channel": 0
+        }
+      ],
+      "code": "// 2016 David A Roberts <https://davidar.io>\n\n// 1 out, 3 in... <https://www.shadertoy.com/view/4djSRW>\n#define MOD3 vec3(.1031,.11369,.13787)\nfloat hash13(vec3 p3) {\n\tp3 = fract(p3 * MOD3);\n    p3 += dot(p3, p3.yzx+19.19);\n    return fract((p3.x + p3.y)*p3.z);\n}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord ) {\n    fragColor = vec4(0,0,0,1);\n    if(iFrame < 10 || iMouse.z > 0.) {\n        if(length(fragCoord-10.) < 2.)\n            fragColor.y = 1.;\n        //else if(hash13(vec3(fragCoord,iFrame)) < 0.05)\n        //    fragColor.x = 1.;\n        return;\n    }\n    \n    if(fragCoord.x < 1. || fragCoord.x > iResolution.x-1. ||\n       fragCoord.y < 1. || fragCoord.y > iResolution.y-1.) {\n        fragColor.x = 1.;\n        return;\n    }\n    \n    vec4 c  = texture(iChannel0, (fragCoord + vec2( 0, 0)) / iResolution.xy);\n    vec4 n  = texture(iChannel0, (fragCoord + vec2( 0, 1)) / iResolution.xy);\n    vec4 ne = texture(iChannel0, (fragCoord + vec2( 1, 1)) / iResolution.xy);\n    vec4 e  = texture(iChannel0, (fragCoord + vec2( 1, 0)) / iResolution.xy);\n    vec4 se = texture(iChannel0, (fragCoord + vec2( 1,-1)) / iResolution.xy);\n    vec4 s  = texture(iChannel0, (fragCoord + vec2( 0,-1)) / iResolution.xy);\n    vec4 sw = texture(iChannel0, (fragCoord + vec2(-1,-1)) / iResolution.xy);\n    vec4 w  = texture(iChannel0, (fragCoord + vec2(-1, 0)) / iResolution.xy);\n    vec4 nw = texture(iChannel0, (fragCoord + vec2(-1, 1)) / iResolution.xy);\n    \n    // aggregation\n    fragColor.y = clamp(\n        c.y + c.x * (n.y + ne.y + e.y + se.y + s.y + sw.y + w.y + nw.y), 0., 1.);\n    \n    bool nc = int(4.*hash13(vec3(fragCoord + vec2( 0, 1), iFrame))) == 0;\n    bool ec = int(4.*hash13(vec3(fragCoord + vec2( 1, 0), iFrame))) == 1;\n    bool sc = int(4.*hash13(vec3(fragCoord + vec2( 0,-1), iFrame))) == 2;\n    bool wc = int(4.*hash13(vec3(fragCoord + vec2(-1, 0), iFrame))) == 3;\n    \n    // diffusion\n    fragColor.x = clamp(\n    \tn.x * float(nc) + e.x * float(ec) + s.x * float(sc) + w.x * float(wc) +\n    \tfloor((1. + (n.x + e.x + s.x + w.x)/100.) * hash13(vec3(fragCoord,iFrame))), 0., 1.);\n    \n    fragColor.x *= 1. - fragColor.y;\n}",
+      "name": "Buf C",
+      "description": "",
+      "type": "buffer"
+    },
+    {
+      "inputs": [
+        {
+          "id": 259,
+          "src": "/media/previz/buffer02.png",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": {
+            "filter": "linear",
+            "wrap": "clamp",
+            "vflip": "true",
+            "srgb": "false",
+            "internal": "byte"
+          },
+          "published": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": 260,
+          "channel": 0
+        }
+      ],
+      "code": "// 2016 David A Roberts <https://davidar.io>\n\n// 1 out, 3 in... <https://www.shadertoy.com/view/4djSRW>\n#define MOD3 vec3(.1031,.11369,.13787)\nfloat hash13(vec3 p3) {\n\tp3 = fract(p3 * MOD3);\n    p3 += dot(p3, p3.yzx+19.19);\n    return fract((p3.x + p3.y)*p3.z);\n}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord ) {\n    fragColor = vec4(0,0,0,1);\n    if(iFrame < 10 || iMouse.z > 0.) {\n        if(length(fragCoord-10.) < 2.)\n            fragColor.y = 1.;\n        //else if(hash13(vec3(fragCoord,iFrame)) < 0.05)\n        //    fragColor.x = 1.;\n        return;\n    }\n    \n    if(fragCoord.x < 1. || fragCoord.x > iResolution.x-1. ||\n       fragCoord.y < 1. || fragCoord.y > iResolution.y-1.) {\n        fragColor.x = 1.;\n        return;\n    }\n    \n    vec4 c  = texture(iChannel0, (fragCoord + vec2( 0, 0)) / iResolution.xy);\n    vec4 n  = texture(iChannel0, (fragCoord + vec2( 0, 1)) / iResolution.xy);\n    vec4 ne = texture(iChannel0, (fragCoord + vec2( 1, 1)) / iResolution.xy);\n    vec4 e  = texture(iChannel0, (fragCoord + vec2( 1, 0)) / iResolution.xy);\n    vec4 se = texture(iChannel0, (fragCoord + vec2( 1,-1)) / iResolution.xy);\n    vec4 s  = texture(iChannel0, (fragCoord + vec2( 0,-1)) / iResolution.xy);\n    vec4 sw = texture(iChannel0, (fragCoord + vec2(-1,-1)) / iResolution.xy);\n    vec4 w  = texture(iChannel0, (fragCoord + vec2(-1, 0)) / iResolution.xy);\n    vec4 nw = texture(iChannel0, (fragCoord + vec2(-1, 1)) / iResolution.xy);\n    \n    // aggregation\n    fragColor.y = clamp(\n        c.y + c.x * (n.y + ne.y + e.y + se.y + s.y + sw.y + w.y + nw.y), 0., 1.);\n    \n    bool nc = int(4.*hash13(vec3(fragCoord + vec2( 0, 1), iFrame))) == 0;\n    bool ec = int(4.*hash13(vec3(fragCoord + vec2( 1, 0), iFrame))) == 1;\n    bool sc = int(4.*hash13(vec3(fragCoord + vec2( 0,-1), iFrame))) == 2;\n    bool wc = int(4.*hash13(vec3(fragCoord + vec2(-1, 0), iFrame))) == 3;\n    \n    // diffusion\n    fragColor.x = clamp(\n    \tn.x * float(nc) + e.x * float(ec) + s.x * float(sc) + w.x * float(wc) +\n    \tfloor((1. + (n.x + e.x + s.x + w.x)/100.) * hash13(vec3(fragCoord,iFrame))), 0., 1.);\n    \n    fragColor.x *= 1. - fragColor.y;\n}",
+      "name": "Buf D",
+      "description": "",
+      "type": "buffer"
+    }
+  ]
+}

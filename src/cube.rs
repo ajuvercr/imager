@@ -1,9 +1,10 @@
 use bytemuck::{Pod, Zeroable};
+use std::error::Error;
 use std::{borrow::Cow, f32::consts, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
-use crate::util::ErrorFuture;
-use crate::{Renderable, Spawner, RenderableConfig};
+
+use crate::{Renderable, RenderableConfig};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -88,7 +89,6 @@ pub struct Example {
     index_buf: wgpu::Buffer,
     index_count: usize,
     bind_group: wgpu::BindGroup,
-    uniform_buf: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     pipeline_wire: Option<wgpu::RenderPipeline>,
 }
@@ -105,19 +105,16 @@ impl Example {
     }
 }
 
+#[async_trait::async_trait]
 impl RenderableConfig for Example {
-    fn optional_features() -> wgpu::Features {
-        wgpu::Features::POLYGON_MODE_LINE
-    }
-}
-
-impl Renderable for Example {
-    fn init(
+    type Input = ();
+    async fn init(
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Self {
+        _input: (),
+    ) -> Result<Self, Box<dyn Error>> {
         // Create the vertex and index buffers
         let vertex_size = mem::size_of::<Vertex>();
         let (vertex_data, index_data) = create_vertices();
@@ -309,23 +306,27 @@ impl Renderable for Example {
         };
 
         // Done
-        Example {
+        Ok(Example {
             vertex_buf,
             index_buf,
             index_count: index_data.len(),
             bind_group,
-            uniform_buf,
             pipeline,
             pipeline_wire,
-        }
+        })
     }
 
+    fn optional_features() -> wgpu::Features {
+        wgpu::Features::POLYGON_MODE_LINE
+    }
+}
+
+impl Renderable for Example {
     fn render(
         &mut self,
         view: &wgpu::TextureView,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        spawner: &Spawner,
     ) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut encoder =
@@ -363,10 +364,5 @@ impl Renderable for Example {
         }
 
         queue.submit(Some(encoder.finish()));
-
-        // If an error occurs, report it and panic.
-        spawner.spawn_local(ErrorFuture {
-            inner: device.pop_error_scope(),
-        });
     }
 }

@@ -1,9 +1,10 @@
-use clap::Parser;
-use std::future::Future;
+use std::{error::Error, future::Future};
 
 pub mod cube;
 pub mod framework;
-pub mod shader_toy;
+pub mod francis;
+pub mod screenshot;
+pub mod shadertoy;
 pub mod util;
 
 pub enum Event {
@@ -12,22 +13,38 @@ pub enum Event {
 }
 
 /// Simple program to greet a person
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[derive(Debug)]
 pub struct Args {
-    #[arg(short, long, default_value_t = 0)]
-    x_pos: u32,
-    #[arg(short, long, default_value_t = 0)]
-    y_pos: u32,
+    pub x_pos: u32,
+    pub y_pos: u32,
 
-    #[arg(short, long, default_value_t = 64)]
-    width: u32,
-    #[arg(long, default_value_t = 64)]
-    height: u32,
+    pub width: u32,
+    pub height: u32,
 
-    #[arg(short, long, default_value_t = false)]
-    single: bool,
-    // output: Option<String>,
+    pub single: bool,
+
+    pub display: Display,
+}
+
+#[derive(Debug)]
+pub enum Display {
+    Window,
+    Desktop,
+}
+impl Display {
+    pub fn needs_override(&self) -> bool {
+        match self {
+            Display::Window => false,
+            Display::Desktop => true,
+        }
+    }
+
+    pub fn is_desktop(&self) -> bool {
+        match self {
+            Display::Window => false,
+            Display::Desktop => true,
+        }
+    }
 }
 
 pub struct Spawner<'a> {
@@ -35,7 +52,7 @@ pub struct Spawner<'a> {
 }
 
 impl<'a> Spawner<'a> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             executor: async_executor::LocalExecutor::new(),
         }
@@ -46,12 +63,18 @@ impl<'a> Spawner<'a> {
         self.executor.spawn(future).detach();
     }
 
-    fn run_until_stalled(&self) {
+    pub fn run(&self) {
+        while self.executor.try_tick() {}
+    }
+
+    pub fn run_until_stalled(&self) {
         while self.executor.try_tick() {}
     }
 }
 
+#[async_trait::async_trait]
 pub trait RenderableConfig: 'static + Sized {
+    type Input;
     fn optional_features() -> wgpu::Features {
         wgpu::Features::empty()
     }
@@ -66,34 +89,27 @@ pub trait RenderableConfig: 'static + Sized {
         }
     }
     fn required_limits() -> wgpu::Limits {
-        wgpu::Limits::downlevel_webgl2_defaults() // These downlevel limits will allow the code to run on all possible hardware
+        wgpu::Limits {
+            max_bind_groups: 6,
+            ..wgpu::Limits::default() // These downlevel limits will allow the code to run on all possible hardware
+        }
     }
-}
 
-pub trait Renderable: 'static {
-    fn init(
+    async fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Self
+        input: Self::Input,
+    ) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized;
-    fn update(
-        &mut self,
-        accum_time: f32,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-    ) {
-        let _ = (accum_time, device, queue, spawner);
+}
+
+pub trait Renderable: 'static {
+    fn update(&mut self, accum_time: f32, size: (u32, u32), device: &wgpu::Device, queue: &wgpu::Queue) {
+        let _ = (accum_time, device, queue);
     }
 
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-    );
+    fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue);
 }
