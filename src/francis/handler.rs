@@ -35,18 +35,20 @@ pub struct Options {
     froxy: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Send {
     shader: Option<String>,
     target: Option<usize>,
+    run: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Update {
-    run: Option<bool>,
-    sleep: Option<u64>,
+    running: Option<bool>,
+    wait: Option<u64>,
+    run: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -55,6 +57,49 @@ pub struct Update {
 pub enum Command {
     Update(Update),
     Send(Send),
+}
+
+struct Params {
+    running: bool,
+    wait: u64,
+    run: u64,
+}
+
+impl Params {
+    fn new() -> Self {
+        Params {
+            running: true,
+            wait: 400,
+            run: 600,
+        }
+    }
+
+    fn update(&mut self, Update { running, wait, run }: Update) {
+        if let Some(r) = running {
+            self.running = r;
+        }
+        if let Some(r) = wait {
+            self.wait = r;
+        }
+        if let Some(r) = run {
+            self.run = r;
+        }
+    }
+}
+
+struct Current {
+    shader_idx: usize,
+    francis_idx: usize,
+    end: Instant,
+}
+impl Current {
+    fn new() -> Self {
+        Self {
+            shader_idx: 0,
+            francis_idx: 0,
+            end: Instant::now(),
+        }
+    }
 }
 
 pub struct Handler {
@@ -67,10 +112,9 @@ pub struct Handler {
     ctx: Ctx,
 
     names: Vec<String>,
-    options: HashMap<String, usize>,
 
-    running: bool,
-    delay: u64,
+    current: Current,
+    params: Params,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -154,89 +198,71 @@ impl Handler {
             ctx,
             start: Instant::now(),
             toys,
-            options,
             clients,
             rand,
             names,
             commands: rx,
-            running: true,
-            delay: 200,
+            current: Current::new(),
+            params: Params::new(),
         })
     }
 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
-        let start_time = Instant::now();
         loop {
             match select(
-                Box::pin(sleep(Duration::from_millis(self.delay))),
+                Box::pin(sleep(Duration::from_millis(self.params.wait))),
                 self.commands.recv(),
             )
             .await
             {
                 Either::Left(_) => {} // `value1` is resolved from `future1`
                 Either::Right((comm, _)) => {
-                    self.handle_command(comm?).await?;
+                    self.handle_command(comm?);
                     continue;
                 }
             };
 
-            if self.running {
-                let francis = {
-                    let idx = self.rand.generate_range(0usize..self.clients.len());
-                    print!("Using francis {} ", idx);
-                    &mut self.clients[idx]
-                };
-                let toy = {
-                    let idx = self.rand.generate_range(0usize..self.toys.len());
-                    println!("for shader {}", self.names[idx]);
-                    &mut self.toys[idx]
-                };
-                let x = toy
-                    .frame(
-                        &self.ctx,
-                        start_time.elapsed().as_secs_f32(),
-                        Some((francis.width(), francis.height())),
-                    )
-                    .await;
-                francis.write(x.buffer, 4).await?;
+            if self.params.running {
+                if self.current.end > Instant::now() {
+                    self.update_current(Send::default())
+                }
+                self.frame().await?;
             }
         }
     }
 
-    async fn handle_command(&mut self, command: Command) -> Result<(), Box<dyn Error>> {
-        match command {
-            Command::Update(Update { run, sleep }) => {
-                if let Some(run) = run {
-                    self.running = run;
-                }
-                if let Some(sleep) = sleep {
-                    self.delay = sleep;
-                }
-                Ok(())
-            }
-            Command::Send(s) => self.handle_shader_command(s).await,
-        }
-    }
-
-    async fn handle_shader_command(
-        &mut self,
-        Send { shader, target }: Send,
-    ) -> Result<(), Box<dyn Error>> {
-        let index = if let Some(st) = shader {
-            if let Some(index) = self.options.get(&st) {
-                *index
-            } else {
-                eprintln!("Unknown shader {}", st);
-                return Ok(());
-            }
+    fn francis_idx(&mut self, run: &Send) -> usize {
+        if let Some(ref st) = run.target {
+            *st
         } else {
-            self.rand.generate_range(0usize..self.toys.len())
-        };
+            self.rand.generate_range(0usize..self.clients.len())
+        }
+    }
 
-        let idx = target.unwrap_or_else(|| self.rand.generate_range(0usize..self.clients.len()));
-        let francis = &mut self.clients[idx];
+    fn shader_idx(&mut self, run: &Send) -> usize {
+        if let Some(ref st) = run.shader {
+            self.names.iter().position(|x| x == st).unwrap_or(0)
+        } else {
+            self.rand.generate_range(0usize..self.names.len())
+        }
+    }
 
-        let toy = &mut self.toys[index];
+    fn duration(&self, run: &Send) -> u64 {
+        run.run.unwrap_or(self.params.run)
+    }
+
+    fn handle_command(&mut self, command: Command) {
+        match command {
+            Command::Update(update) => {
+                self.params.update(update);
+            }
+            Command::Send(s) => self.update_current(s),
+        }
+    }
+
+    async fn frame(&mut self) -> Result<(), Box<dyn Error>> {
+        let francis = &mut self.clients[self.current.francis_idx];
+        let toy = &mut self.toys[self.current.shader_idx];
         let frame = toy
             .frame(
                 &self.ctx,
@@ -247,5 +273,18 @@ impl Handler {
 
         francis.write(frame.buffer, 4).await?;
         Ok(())
+    }
+
+    fn update_current(&mut self, send: Send) {
+        let francis_idx = self.francis_idx(&send);
+        let shader_idx = self.shader_idx(&send);
+
+        let duration = self.duration(&send);
+
+        self.current = Current {
+            shader_idx,
+            end: Instant::now() + Duration::from_millis(duration),
+            francis_idx,
+        };
     }
 }
