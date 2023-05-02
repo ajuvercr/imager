@@ -8,6 +8,7 @@ use async_std::task::sleep;
 use futures_util::future::select;
 use futures_util::future::Either;
 use serde::{Deserialize, Serialize};
+use wgpu::util::align_to;
 
 use crate::screenshot::scrot_new;
 use crate::screenshot::AnimScrot;
@@ -102,8 +103,10 @@ impl Handler {
             .collect()
             .await;
 
-        let main = &clients[0];
-        let (w, h) = (main.width(), main.height());
+        let (w, h) = froxy.iter().fold((0, 0), |(w, h), froxy| {
+            (w.max(froxy.width), h.max(froxy.height))
+        });
+        let (w, h) = (align_to(w.into(), 64), h.into());
 
         let ctx = Ctx::new::<Example>().await;
         let mut options = HashMap::new();
