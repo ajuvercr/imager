@@ -1,22 +1,9 @@
 {
   "local": [
-    "./downloads/city.json",
-    "./downloads/cyber_uji.json",
-    "./downloads/disco.json",
-    "./downloads/fly.json",
-    "./downloads/head.json",
-    "./downloads/meditation.json",
-    "./downloads/radar.json",
-    "./downloads/real_eye_3.json",
-    "./downloads/real_eye.json",
-    "./downloads/sauron.json",
-    "./downloads/starfield.json",
-    "./downloads/text.json",
-    "./downloads/the-alien.json",
-    "./downloads/thorns.json"
+    "./downloads/sauron.json"
   ],
   "toy": [],
-  "source": ["./shaders/splash.glsl" ],
-  "froxy": "10.10.10.10:10001",
-  "francis": "10.10.10.10:8000"
+  "source": [ ],
+  "froxy": "192.168.10.10:10001",
+  "francis": "192.168.10.10:8000"
 }

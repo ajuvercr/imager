@@ -34,7 +34,8 @@ impl FroxyConfig {
     }
 }
 
-pub async fn froxy_configs<A: ToSocketAddrs>(addr: A) -> std::io::Result<Vec<FroxyConfig>> {
+pub async fn froxy_configs<A: ToSocketAddrs + std::fmt::Display>(addr: A) -> std::io::Result<Vec<FroxyConfig>> {
+    println!("Connecting to froxy {}", addr);
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).await?;

@@ -8,7 +8,6 @@ use async_std::task::sleep;
 use futures_util::future::select;
 use futures_util::future::Either;
 use serde::{Deserialize, Serialize};
-use wgpu::util::align_to;
 
 use crate::screenshot::scrot_new;
 use crate::screenshot::AnimScrot;
@@ -49,6 +48,7 @@ pub struct Update {
     running: Option<bool>,
     wait: Option<u64>,
     run: Option<u64>,
+    failure: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -63,18 +63,28 @@ struct Params {
     running: bool,
     wait: u64,
     run: u64,
+    failure: f32,
 }
 
 impl Params {
     fn new() -> Self {
         Params {
             running: true,
-            wait: 400,
-            run: 600,
+            wait: 500,
+            run: 2000,
+            failure: 0.2,
         }
     }
 
-    fn update(&mut self, Update { running, wait, run }: Update) {
+    fn update(
+        &mut self,
+        Update {
+            running,
+            wait,
+            run,
+            failure,
+        }: Update,
+    ) {
         if let Some(r) = running {
             self.running = r;
         }
@@ -84,9 +94,13 @@ impl Params {
         if let Some(r) = run {
             self.run = r;
         }
+        if let Some(r) = failure {
+            self.failure = r;
+        }
     }
 }
 
+#[derive(Debug)]
 struct Current {
     shader_idx: usize,
     francis_idx: usize,
@@ -104,9 +118,10 @@ impl Current {
 
 pub struct Handler {
     toys: Vec<AnimScrot<Example>>,
+    clients: Vec<Francis>,
+
     commands: mpsc::Receiver<Command>,
     rand: WyRand,
-    clients: Vec<Francis>,
 
     start: Instant,
     ctx: Ctx,
@@ -141,28 +156,34 @@ impl Handler {
 
         let froxy = froxy_configs(&input.froxy).await?;
 
+        println!("got froxy config");
+
         let clients: Vec<_> = stream::iter(&froxy)
             .then(|fr| Francis::new(&input.francis, *fr))
             .map(|x| x.unwrap())
             .collect()
             .await;
 
+        println!("got francis clients");
+
         let (w, h) = froxy.iter().fold((0, 0), |(w, h), froxy| {
             (w.max(froxy.width), h.max(froxy.height))
         });
-        let (w, h) = (align_to(w.into(), 64), h.into());
+        let (w, h) = (w.into(), h.into());
+
+        let (wf, hf) = (w as f32, h as f32);
 
         let ctx = Ctx::new::<Example>().await;
         let mut options = HashMap::new();
 
         let locals = stream::iter(input.local)
-            .then(|local| Args::from_local(api, local))
+            .then(|local| Args::from_local(api, local, wf, hf))
             .map(|x| x.unwrap());
         let toys = stream::iter(input.toy)
-            .then(|toy| Args::from_toy(api, toy, None))
+            .then(|toy| Args::from_toy(api, toy, None, wf, hf))
             .map(|x| x.unwrap());
         let sources = stream::iter(input.source)
-            .then(|toy| Args::from_source(Some(toy)))
+            .then(|toy| Args::from_source(Some(toy), wf, hf))
             .map(|x| x.unwrap());
 
         let toys_and_names: Vec<_> = locals
@@ -172,6 +193,8 @@ impl Handler {
             .map(|x| x.unwrap())
             .collect()
             .await;
+
+        println!("got toys");
 
         let mut toys = Vec::new();
         let mut names = Vec::new();
@@ -192,6 +215,7 @@ impl Handler {
 
         let (tx, rx) = mpsc::bounded(10);
 
+        println!("Server starting");
         tokio::spawn(start_server(port, tx, info));
 
         Ok(Self {
@@ -209,24 +233,27 @@ impl Handler {
 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         loop {
-            match select(
-                Box::pin(sleep(Duration::from_millis(self.params.wait))),
-                self.commands.recv(),
-            )
-            .await
-            {
-                Either::Left(_) => {} // `value1` is resolved from `future1`
-                Either::Right((comm, _)) => {
-                    self.handle_command(comm?);
-                    continue;
+            if self.current.end < Instant::now() {
+                match select(
+                    Box::pin(sleep(Duration::from_millis(self.params.wait))),
+                    self.commands.recv(),
+                )
+                .await
+                {
+                    Either::Left(_) => {
+                        self.update_current(Send::default());
+                    }
+                    Either::Right((comm, _)) => {
+                        self.handle_command(comm?);
+                        continue;
+                    }
+                };
+            }
+            while self.current.end > Instant::now() {
+                self.frame(self.params.failure).await?;
+                if let Ok(x) = self.commands.try_recv() {
+                    self.handle_command(x);
                 }
-            };
-
-            if self.params.running {
-                if self.current.end > Instant::now() {
-                    self.update_current(Send::default())
-                }
-                self.frame().await?;
             }
         }
     }
@@ -260,7 +287,7 @@ impl Handler {
         }
     }
 
-    async fn frame(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn frame(&mut self, failure: f32) -> Result<(), Box<dyn Error>> {
         let francis = &mut self.clients[self.current.francis_idx];
         let toy = &mut self.toys[self.current.shader_idx];
         let frame = toy
@@ -271,7 +298,7 @@ impl Handler {
             )
             .await;
 
-        francis.write(frame.buffer, 4).await?;
+        francis.write(frame.buffer, 4, failure).await?;
         Ok(())
     }
 

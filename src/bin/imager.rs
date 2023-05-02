@@ -61,7 +61,7 @@ pub struct FrancisArgs {
     command: Shader,
 }
 
-fn fuji_args() -> shader_toy::Args {
+fn fuji_args(width: f32, height: f32) -> shader_toy::Args {
     let rps = vec![RenderPass {
         inputs: vec![],
         outputs: vec![],
@@ -75,6 +75,8 @@ fn fuji_args() -> shader_toy::Args {
         rps,
         client: Client::new(""),
         name: "Splash".into(),
+        width,
+        height,
     }
 }
 
@@ -84,13 +86,15 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
     println!("Got GPU Ctx");
 
     let input = match args.command {
-        Shader::Source { location } => shader_toy::Args::from_source(location).await?,
-        Shader::Local { api, location } => shader_toy::Args::from_local(&api, location).await?,
+        Shader::Source { location } => shader_toy::Args::from_source(location, 0., 0.).await?,
+        Shader::Local { api, location } => {
+            shader_toy::Args::from_local(&api, location, 0., 0.).await?
+        }
         Shader::Toy {
             api,
             shader_id,
             save,
-        } => shader_toy::Args::from_toy(&api, shader_id, save).await?,
+        } => shader_toy::Args::from_toy(&api, shader_id, save, 0., 0.).await?,
         Shader::Server {
             location,
             api,
@@ -123,7 +127,7 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
                 display,
             };
             let setup = imager::framework::setup::<shader_toy::Example>(&args).await;
-            imager::framework::screen::<shader_toy::Example>(&setup, fuji_args()).await;
+            imager::framework::screen::<shader_toy::Example>(&setup, fuji_args(args.width as f32, args.height as f32)).await;
             imager::framework::start::<shader_toy::Example>(setup, args, input).await;
             Ok(())
         }

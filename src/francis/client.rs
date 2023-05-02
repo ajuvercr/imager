@@ -6,6 +6,7 @@ use async_std::{
 };
 use byteorder::BigEndian;
 use byteorder::WriteBytesExt;
+use nanorand::{Rng, WyRand};
 use wgpu::util::align_to;
 
 use super::FroxyConfig;
@@ -13,15 +14,19 @@ use super::FroxyConfig;
 pub struct Francis {
     x: u16,
     y: u16,
+    xs: Vec<u16>,
+    ys: Vec<u16>,
     width: u16,
+    exact_width: u16,
     height: u16,
     stream: TcpStream,
     buffer: Option<Vec<u8>>,
+    rand: WyRand,
 }
 
 const ITEMS: usize = 5000;
 impl Francis {
-    pub async fn new<A: ToSocketAddrs>(
+    pub async fn new<A: ToSocketAddrs + std::fmt::Display>(
         addr: A,
         FroxyConfig {
             x,
@@ -31,15 +36,24 @@ impl Francis {
             port: _,
         }: FroxyConfig,
     ) -> io::Result<Self> {
+        println!(
+            "Connecting to {} x {} y {} w {} h {}",
+            addr, x, y, width, height
+        );
         let stream = TcpStream::connect(addr).await?;
+        let exact_width = width;
         let width = align_to(width, 64);
         Ok(Self {
             x,
             y,
+            xs: (0..exact_width).collect(),
+            ys: (0..height).collect(),
+            exact_width,
             width,
             height,
             stream,
             buffer: None,
+            rand: WyRand::new(),
         })
     }
 
@@ -51,7 +65,12 @@ impl Francis {
         self.height as u32
     }
 
-    pub async fn write(&mut self, buf: Vec<u8>, bytes_per_pixel: usize) -> io::Result<()> {
+    pub async fn write(
+        &mut self,
+        mut buf: Vec<u8>,
+        bytes_per_pixel: usize,
+        failure: f32,
+    ) -> io::Result<()> {
         debug_assert_eq!(
             buf.len(),
             bytes_per_pixel * self.width as usize * self.height as usize
@@ -60,13 +79,23 @@ impl Francis {
         let mut cursor = Cursor::new([0; 7 * ITEMS]);
         let mut i = 0;
 
-        for x in 0..self.width {
-            for y in 0..self.height {
-                let index = (y as usize * self.width as usize + x as usize) * bytes_per_pixel;
+        self.rand.shuffle(&mut self.xs);
+        self.rand.shuffle(&mut self.ys);
+
+        for x in &self.xs {
+            for y in &self.ys {
+                let index = (*y as usize * self.width as usize + *x as usize) * bytes_per_pixel;
 
                 let b = buf[index + 0];
                 let g = buf[index + 1];
                 let r = buf[index + 2];
+
+                if self.rand.generate::<f32>() < failure {
+                    buf[index + 0] = 0;
+                    buf[index + 1] = 0;
+                    buf[index + 2] = 0;
+                    continue;
+                }
 
                 if let Some(old) = &self.buffer {
                     let ob = old[index + 0];

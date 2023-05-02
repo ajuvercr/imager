@@ -1,7 +1,8 @@
-use std::{borrow::Cow, collections::HashMap, error::Error, io::Write, ops::Deref};
+use std::{borrow::Cow, collections::HashMap, error::Error, io::Write, ops::Deref, time::Duration};
 
 use async_std::fs::read_to_string;
 use bytemuck::{Pod, Zeroable};
+use nanorand::{Rng, WyRand};
 use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, RenderPipeline, Texture};
 
 use crate::{
@@ -491,9 +492,15 @@ pub struct Args {
     pub rps: Vec<super::RenderPass>,
     pub client: Client,
     pub name: String,
+    pub width: f32,
+    pub height: f32,
 }
 impl Args {
-    pub async fn from_source(loc: Option<String>) -> Result<Self, Box<dyn Error>> {
+    pub async fn from_source(
+        loc: Option<String>,
+        width: f32,
+        height: f32,
+    ) -> Result<Self, Box<dyn Error>> {
         let source = match &loc {
             Some(name) => read_to_string(name).await?,
             None => include_str!("../../shaders/cyber_fuji.glsl").to_string(),
@@ -512,9 +519,16 @@ impl Args {
             rps,
             client: Client::new("".into()),
             name: loc.unwrap_or("cyber_fuji".to_string()),
+            width,
+            height,
         })
     }
-    pub async fn from_local(api: &str, loc: String) -> Result<Self, Box<dyn Error>> {
+    pub async fn from_local(
+        api: &str,
+        loc: String,
+        width: f32,
+        height: f32,
+    ) -> Result<Self, Box<dyn Error>> {
         let st = read_to_string(loc).await?;
         let shader: super::Shader = serde_json::from_str(&st)?;
 
@@ -524,6 +538,8 @@ impl Args {
             rps: shader.renderpass,
             client,
             name: shader.info.name,
+            width,
+            height,
         })
     }
 
@@ -531,6 +547,8 @@ impl Args {
         api: &str,
         shader_id: String,
         save: Option<String>,
+        width: f32,
+        height: f32,
     ) -> Result<Self, Box<dyn Error>> {
         let client = Client::new(&api);
         let shader = client
@@ -541,6 +559,8 @@ impl Args {
             rps: shader.renderpass,
             client,
             name: shader.info.name,
+            width,
+            height,
         })
     }
 }
@@ -555,6 +575,8 @@ pub struct Example {
 
     rps: Vec<RenderPass>,
     textures: HashMap<u64, Texture>,
+
+    delta: f32,
 }
 
 #[async_trait::async_trait]
@@ -603,7 +625,7 @@ impl RenderableConfig for Example {
         // let mx_total = [config.width as f32, config.height as f32];
         let mut uniform = Uniform::default();
 
-        uniform.resolution = [config.width as f32, config.height as f32, 0., 0.];
+        uniform.resolution = [args.width, args.height, 0., 0.];
 
         let vertex_buffer_layouts = [wgpu::VertexBufferLayout {
             array_stride: vertex_size as wgpu::BufferAddress,
@@ -674,6 +696,7 @@ impl RenderableConfig for Example {
             label: None,
         });
 
+        let mut rng = WyRand::new();
         // Done
         Ok(Example {
             vertex_buf,
@@ -684,6 +707,7 @@ impl RenderableConfig for Example {
             uniform_buf,
             rps,
             textures,
+            delta: rng.generate_range(0..10000) as f32 / 100.0,
         })
     }
 }
@@ -698,7 +722,7 @@ impl Renderable for Example {
     ) {
         let delta = accum_time - self.uniform.time;
         self.uniform.time_delta = delta;
-        self.uniform.time = accum_time;
+        self.uniform.time = accum_time + self.delta;
         self.uniform.frame += 1;
         self.uniform.resolution = [size.0 as f32, size.1 as f32, 0., 0.];
 
