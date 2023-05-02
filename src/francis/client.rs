@@ -1,14 +1,18 @@
 use std::io::Cursor;
 
 use async_std::{
-    io::{self, ReadExt, WriteExt},
+    io::{self, WriteExt},
     net::{TcpStream, ToSocketAddrs},
 };
+use byteorder::BigEndian;
 use byteorder::WriteBytesExt;
-use byteorder::{BigEndian, ReadBytesExt};
 use wgpu::util::align_to;
 
+use super::FroxyConfig;
+
 pub struct Francis {
+    x: u16,
+    y: u16,
     width: u16,
     height: u16,
     stream: TcpStream,
@@ -19,26 +23,19 @@ const ITEMS: usize = 5000;
 impl Francis {
     pub async fn new<A: ToSocketAddrs>(
         addr: A,
-        w: Option<u16>,
-        h: Option<u16>,
+        FroxyConfig {
+            x,
+            y,
+            width,
+            height,
+            port: _,
+        }: FroxyConfig,
     ) -> io::Result<Self> {
-        let mut stream = TcpStream::connect(addr).await?;
-
-        let mut buf = [0u8; 4];
-        stream.read_exact(&mut buf).await?;
-        let mut rdr = Cursor::new(buf);
-        let mut width = rdr.read_u16::<BigEndian>().unwrap();
-        let mut height = rdr.read_u16::<BigEndian>().unwrap();
-
-        if let Some(w) = w {
-            width = w;
-        }
-        if let Some(h) = h {
-            height = h;
-        }
-
+        let stream = TcpStream::connect(addr).await?;
         let width = align_to(width, 64);
         Ok(Self {
+            x,
+            y,
             width,
             height,
             stream,
@@ -72,16 +69,16 @@ impl Francis {
                 let r = buf[index + 2];
 
                 if let Some(old) = &self.buffer {
-                    let or = old[index + 0];
+                    let ob = old[index + 0];
                     let og = old[index + 1];
-                    let ob = old[index + 2];
+                    let or = old[index + 2];
                     if or == r && og == g && ob == b {
                         continue;
                     }
                 }
 
-                cursor.write_u16::<BigEndian>(x).unwrap();
-                cursor.write_u16::<BigEndian>(y).unwrap();
+                cursor.write_u16::<BigEndian>(x + self.x).unwrap();
+                cursor.write_u16::<BigEndian>(y + self.y).unwrap();
 
                 cursor.write_u8(r).unwrap();
                 cursor.write_u8(g).unwrap();

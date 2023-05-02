@@ -15,8 +15,10 @@ use crate::screenshot::Ctx;
 use crate::shadertoy::Args;
 use crate::shadertoy::Example;
 
+use super::froxy_configs;
 use super::server::start_server;
 use super::Francis;
+use super::FroxyConfig;
 use nanorand::{Rng, WyRand};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,8 +30,8 @@ pub struct Options {
     /// GLSL source files
     source: Vec<String>,
 
-    small_francis: Vec<String>,
     francis: String,
+    froxy: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -70,9 +72,9 @@ pub struct Handler {
     delay: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Info {
-    screens: Vec<(u32, u32)>,
+    froxy: Vec<FroxyConfig>,
     toys: Vec<String>,
 }
 
@@ -89,12 +91,13 @@ async fn create_scrot(
 
 use futures_util::{stream, StreamExt};
 impl Handler {
-    pub async fn new(api: &str, input: Options, port: u16) -> Handler {
+    pub async fn new(api: &str, input: Options, port: u16) -> std::io::Result<Handler> {
         let rand = WyRand::new();
 
-        let clients: Vec<_> = stream::iter([input.francis])
-            .chain(stream::iter(input.small_francis))
-            .then(|fr| Francis::new(fr, None, None))
+        let froxy = froxy_configs(&input.froxy).await?;
+
+        let clients: Vec<_> = stream::iter(&froxy)
+            .then(|fr| Francis::new(&input.francis, *fr))
             .map(|x| x.unwrap())
             .collect()
             .await;
@@ -135,7 +138,7 @@ impl Handler {
             });
 
         let info = Info {
-            screens: clients.iter().map(|x| (x.width(), x.height())).collect(),
+            froxy,
             toys: options.keys().cloned().collect(),
         };
         let info = serde_json::to_string_pretty(&info).unwrap();
@@ -144,7 +147,7 @@ impl Handler {
 
         tokio::spawn(start_server(port, tx, info));
 
-        Self {
+        Ok(Self {
             ctx,
             start: Instant::now(),
             toys,
@@ -155,7 +158,7 @@ impl Handler {
             commands: rx,
             running: true,
             delay: 200,
-        }
+        })
     }
 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
@@ -194,7 +197,6 @@ impl Handler {
                     .await;
                 francis.write(x.buffer, 4).await?;
             }
-
         }
     }
 

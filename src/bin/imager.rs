@@ -99,7 +99,7 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
             let config = read_to_string(location).await?;
             let config: francis::Options = serde_json::from_str(&config)?;
 
-            let handler = Handler::new(&api, config, port).await;
+            let handler = Handler::new(&api, config, port).await?;
             handler.start().await?;
 
             return Ok(());
@@ -128,34 +128,35 @@ async fn run_francis() -> Result<(), Box<dyn Error>> {
             Ok(())
         }
         Mode::Francis => {
-            let mut francis =
-                Francis::new(&args.addr.expect("Please specify addr"), args.x, args.y)
-                    .await
-                    .unwrap();
-            println!("Created francis");
-
-            let ctx = Ctx::new::<shader_toy::Example>().await;
-
-            let mut runner =
-                scrot_new::<shader_toy::Example>(&ctx, francis.width(), francis.height(), input)
-                    .await?;
-
-            let start = Instant::now();
-            let mut count = 0;
-            let mut fps = Instant::now();
-            loop {
-                let frame = runner
-                    .frame(&ctx, start.elapsed().as_secs_f32(), None)
-                    .await;
-                francis.write(frame.buffer, 4).await.unwrap();
-
-                count += 1;
-                if fps.elapsed().as_secs_f32() > 1.0 {
-                    fps = Instant::now();
-                    println!("fps {}", count);
-                    count = 0;
-                }
-            }
+            panic!("Francis mode is no longer supported")
+            // let mut francis =
+            //     Francis::new(&args.addr.expect("Please specify addr"), args.x, args.y)
+            //         .await
+            //         .unwrap();
+            // println!("Created francis");
+            //
+            // let ctx = Ctx::new::<shader_toy::Example>().await;
+            //
+            // let mut runner =
+            //     scrot_new::<shader_toy::Example>(&ctx, francis.width(), francis.height(), input)
+            //         .await?;
+            //
+            // let start = Instant::now();
+            // let mut count = 0;
+            // let mut fps = Instant::now();
+            // loop {
+            //     let frame = runner
+            //         .frame(&ctx, start.elapsed().as_secs_f32(), None)
+            //         .await;
+            //     francis.write(frame.buffer, 4).await.unwrap();
+            //
+            //     count += 1;
+            //     if fps.elapsed().as_secs_f32() > 1.0 {
+            //         fps = Instant::now();
+            //         println!("fps {}", count);
+            //         count = 0;
+            //     }
+            // }
         }
     }
 }
